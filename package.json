@@ -1,0 +1,49 @@
+{
+  "name": "moodlia",
+  "version": "0.1.19",
+  "description": "Command-line and Node client for MoodlIA Moodle automation over REST and MCP.",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "author": "Pablo Gallego",
+  "homepage": "https://moodlia.com/products/cli",
+  "main": "./client/moodle-rest-client.mjs",
+  "types": "./client/moodle-rest-client.d.ts",
+  "sideEffects": false,
+  "bin": {
+    "moodlia": "cli/moodlia.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./client/moodle-rest-client.d.ts",
+      "import": "./client/moodle-rest-client.mjs"
+    },
+    "./contract": "./contract/operations.json"
+  },
+  "files": [
+    "cli/",
+    "client/",
+    "contract/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "moodle",
+    "moodlia",
+    "cli",
+    "rest",
+    "mcp",
+    "automation"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check cli/moodlia.mjs && node --check client/moodle-rest-client.mjs && npm test",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}
