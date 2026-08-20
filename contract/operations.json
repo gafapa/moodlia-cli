@@ -4186,6 +4186,14 @@
           "type": "string",
           "required": false
         },
+        "summary_format": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "html",
+            "plain"
+          ]
+        },
         "position": {
           "type": "integer",
           "required": false
@@ -4201,6 +4209,7 @@
         "section_number": "integer",
         "name": "string",
         "summary": "string",
+        "summary_format": "string",
         "visible": "boolean"
       },
       "errors": [
@@ -4251,6 +4260,14 @@
           "type": "string",
           "required": false
         },
+        "summary_format": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "html",
+            "plain"
+          ]
+        },
         "visible": {
           "type": "boolean",
           "required": false
@@ -4262,6 +4279,7 @@
         "section_number": "integer",
         "name": "string",
         "summary": "string",
+        "summary_format": "string",
         "visible": "boolean"
       },
       "errors": [

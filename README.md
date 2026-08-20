@@ -8,7 +8,10 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.0` makes the package REST-only. It removes the exported `McpTransport` and `createMoodleMcpClient` APIs; command names and REST operation semantics are unchanged. MCP integrations continue through the independent Moodle-hosted endpoint.
+Version `0.2.1` keeps the package REST-only and adds explicit `html` or `plain`
+summary formats to section creation and updates. Version `0.2.0` removed the
+exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
+continue through the independent Moodle-hosted endpoint.
 
 ## Requirements
 
@@ -135,7 +138,7 @@ moodlia create-course-category --name "Generated Courses" --visible true
 moodlia create-course-category --name "Generated Courses" --visible true --reuse-existing true
 moodlia create-course --fullname "MoodlIA Demo Course" --shortname "moodlia-demo-001" --category-id 12 --visible true --enable-completion true
 moodlia move-course --course-id 42 --category-id 12
-moodlia create-section --course-id 42 --name "Unit 1" --summary "<p>Introduction.</p>" --visible true
+moodlia create-section --course-id 42 --name "Unit 1" --summary "<p>Introduction.</p>" --summary-format html --visible true
 moodlia create-module --course-id 42 --section-number 1 --module-type page --name "Reading" --options "{\"content\":\"<p>Read this first.</p>\"}"
 ```
 

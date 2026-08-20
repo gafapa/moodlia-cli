@@ -186,6 +186,32 @@ test('CLI help is generated from the operation contract', async () => {
   assert.match(result.stdout, /--limit <integer>\s+optional; min: 1/);
 });
 
+test('section commands accept HTML summaries from the shared contract', async () => {
+  const help = await runCli(['create-section', '--help']);
+  assert.equal(help.code, 0);
+  assert.match(help.stdout, /--summary-format <string>\s+optional; one of: html, plain/);
+
+  const accepted = await runCli([
+    'update-section',
+    '--course-id', '42',
+    '--section-number', '1',
+    '--summary', '<p>Updated summary</p>',
+    '--summary-format', 'html'
+  ]);
+  assert.equal(accepted.code, 1);
+  assert.match(JSON.parse(accepted.stderr.trim()).message, /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/);
+
+  const rejected = await runCli([
+    'create-section',
+    '--course-id', '42',
+    '--name', 'Section',
+    '--summary', 'Summary',
+    '--summary-format', 'markdown'
+  ]);
+  assert.equal(rejected.code, 1);
+  assert.match(JSON.parse(rejected.stderr.trim()).message, /summary_format must be one of: html, plain/);
+});
+
 test('CLI upload commands expose the unlimited local file option', async () => {
   const result = await runCli(['upload-folder-file', '--help']);
   assert.equal(result.code, 0);

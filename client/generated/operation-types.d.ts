@@ -475,6 +475,7 @@ export interface CreateSectionParameters {
   course_id: number;
   name: string;
   summary?: string;
+  summary_format?: "html" | "plain";
   position?: number;
   visible?: boolean;
 }
@@ -485,6 +486,7 @@ export interface UpdateSectionParameters {
   section_number?: number;
   name?: string;
   summary?: string;
+  summary_format?: "html" | "plain";
   visible?: boolean;
 }
 
@@ -2461,6 +2463,7 @@ export interface CreateSectionResponse {
   section_number: number;
   name: string;
   summary: string;
+  summary_format: string;
   visible: boolean;
 }
 
@@ -2470,6 +2473,7 @@ export interface UpdateSectionResponse {
   section_number: number;
   name: string;
   summary: string;
+  summary_format: string;
   visible: boolean;
 }
 
