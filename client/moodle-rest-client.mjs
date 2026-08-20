@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 export function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -27,6 +28,158 @@ export function loadEnvFile(filePath) {
 
 export function loadContractFromFile(contractPath) {
   return JSON.parse(fs.readFileSync(contractPath, 'utf8').replace(/^\uFEFF/, ''));
+}
+
+export function encodeFileForUpload(filePath) {
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    throw new MoodleClientError('invalid_parameters', 'An upload file path is required.', {
+      parameter: 'filePath'
+    });
+  }
+
+  try {
+    return fs.readFileSync(filePath).toString('base64');
+  } catch (error) {
+    throw new MoodleClientError('invalid_parameters', `Unable to read upload file: ${filePath}`, {
+      parameter: 'filePath',
+      file_path: filePath
+    }, error);
+  }
+}
+
+export async function uploadFileToMoodleDraft({
+  baseUrl,
+  token,
+  filePath,
+  filename = null,
+  filepath = '/',
+  itemId = 0,
+  timeoutMs = 0,
+  fetchImplementation = globalThis.fetch,
+  allowInsecure = false
+} = {}) {
+  if (!baseUrl || !token) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      'A Moodle base URL and REST token are required for draft uploads.',
+      { required: ['baseUrl', 'token'] }
+    );
+  }
+  if (typeof fetchImplementation !== 'function') {
+    throw new MoodleClientError('invalid_parameters', 'A fetch implementation is required.');
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    throw new MoodleClientError('invalid_parameters', 'timeoutMs must be a non-negative finite number.', {
+      parameter: 'timeoutMs'
+    });
+  }
+  if (!Number.isInteger(itemId) || itemId < 0) {
+    throw new MoodleClientError('invalid_parameters', 'itemId must be a non-negative integer.', {
+      parameter: 'itemId'
+    });
+  }
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    throw new MoodleClientError('invalid_parameters', 'An upload file path is required.', {
+      parameter: 'filePath'
+    });
+  }
+
+  const resolvedPath = path.resolve(filePath);
+  const resolvedFilename = String(filename ?? path.basename(resolvedPath)).trim();
+  if (!resolvedFilename || path.basename(resolvedFilename) !== resolvedFilename) {
+    throw new MoodleClientError('invalid_parameters', 'filename must be a plain file name.', {
+      parameter: 'filename'
+    });
+  }
+  const resolvedFilepath = String(filepath || '/');
+  if (!resolvedFilepath.startsWith('/') || !resolvedFilepath.endsWith('/') || resolvedFilepath.includes('..')) {
+    throw new MoodleClientError('invalid_parameters', 'filepath must be an absolute Moodle file path.', {
+      parameter: 'filepath'
+    });
+  }
+
+  let fileBlob;
+  try {
+    const stats = fs.statSync(resolvedPath);
+    if (!stats.isFile()) {
+      throw new Error('The path is not a regular file.');
+    }
+    fileBlob = await fs.openAsBlob(resolvedPath);
+  } catch (error) {
+    throw new MoodleClientError('invalid_parameters', `Unable to read upload file: ${resolvedPath}`, {
+      parameter: 'filePath',
+      file_path: resolvedPath
+    }, error);
+  }
+
+  const endpoint = resolveMoodleUrl(baseUrl, 'webservice/upload.php', { allowInsecure });
+  const body = new FormData();
+  body.set('token', String(token));
+  body.set('filepath', resolvedFilepath);
+  body.set('itemid', String(itemId));
+  body.set('file_1', fileBlob, resolvedFilename);
+
+  const controller = new AbortController();
+  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    let response;
+    try {
+      response = await fetchImplementation(endpoint, {
+        method: 'POST',
+        body,
+        redirect: 'error',
+        signal: controller.signal
+      });
+    } catch (error) {
+      throw new MoodleClientError('transport_error', `Moodle draft upload failed: ${error.message}`, {
+        endpoint: 'webservice/upload.php'
+      }, error);
+    }
+
+    const text = await response.text();
+    let payload;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch (error) {
+      throw new MoodleClientError('transport_error', 'Moodle draft upload response was not valid JSON.', {
+        http_status: response.status
+      }, error);
+    }
+    if (!response.ok) {
+      throw new MoodleClientError('transport_error', `Moodle draft upload failed with HTTP ${response.status}.`, {
+        http_status: response.status
+      });
+    }
+    if (payload?.exception || payload?.errorcode) {
+      const errorCode = moodleErrorCode(payload);
+      throw new MoodleClientError(errorCode, payload.message || 'Moodle draft upload failed.', {
+        moodle_errorcode: payload.errorcode,
+        moodle_exception: payload.exception,
+        ...(errorCode !== 'internal_error' && payload.debuginfo
+          ? { moodle_debuginfo: payload.debuginfo }
+          : {})
+      });
+    }
+    const uploaded = Array.isArray(payload) ? payload[0] : null;
+    if (!uploaded || uploaded.error || !Number.isInteger(Number(uploaded.itemid)) || Number(uploaded.itemid) <= 0) {
+      throw new MoodleClientError(
+        'file_upload_failed',
+        uploaded?.error || 'Moodle did not return a draft item id.',
+        { error_type: uploaded?.errortype }
+      );
+    }
+
+    return {
+      draft_item_id: Number(uploaded.itemid),
+      filename: String(uploaded.filename ?? resolvedFilename),
+      filepath: String(uploaded.filepath ?? resolvedFilepath),
+      filesize: Number(uploaded.filesize ?? uploaded.size ?? fileBlob.size)
+    };
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export function toRestFunctionName(contract, operationName) {
@@ -363,6 +516,7 @@ export class RestTransport {
     baseUrl,
     token,
     timeoutMs = 30000,
+    uploadTimeoutMs = 0,
     fetchImplementation = globalThis.fetch,
     allowInsecure = false
   } = {}) {
@@ -383,14 +537,30 @@ export class RestTransport {
         parameter: 'timeoutMs'
       });
     }
+    if (!Number.isFinite(uploadTimeoutMs) || uploadTimeoutMs < 0) {
+      throw new MoodleClientError('invalid_parameters', 'uploadTimeoutMs must be a non-negative finite number.', {
+        parameter: 'uploadTimeoutMs'
+      });
+    }
 
     this.baseUrl = normaliseMoodleBaseUrl(baseUrl, { allowInsecure }).toString();
     this.token = token;
     this.timeoutMs = timeoutMs;
+    this.uploadTimeoutMs = uploadTimeoutMs;
     this.fetchImplementation = fetchImplementation;
     this.allowInsecure = allowInsecure;
-    this.parameterEncoding = 'form';
-    this.supportsCanonicalOperations = false;
+  }
+
+  async uploadDraftFile(filePath, options = {}) {
+    return uploadFileToMoodleDraft({
+      baseUrl: this.baseUrl,
+      token: this.token,
+      filePath,
+      timeoutMs: this.uploadTimeoutMs,
+      fetchImplementation: this.fetchImplementation,
+      allowInsecure: this.allowInsecure,
+      ...options
+    });
   }
 
   async callFunction(functionName, parameters = {}) {
@@ -445,10 +615,14 @@ export class RestTransport {
       }
 
       if (payload?.exception || payload?.errorcode) {
-        throw new MoodleClientError(moodleErrorCode(payload), payload.message || 'Moodle REST error.', {
+        const errorCode = moodleErrorCode(payload);
+        throw new MoodleClientError(errorCode, payload.message || 'Moodle REST error.', {
           function_name: functionName,
           moodle_errorcode: payload.errorcode,
-          moodle_exception: payload.exception
+          moodle_exception: payload.exception,
+          ...(errorCode !== 'internal_error' && payload.debuginfo
+            ? { moodle_debuginfo: payload.debuginfo }
+            : {})
         });
       }
 
@@ -458,289 +632,6 @@ export class RestTransport {
         clearTimeout(timeout);
       }
     }
-  }
-
-  async callOperation() {
-    throw new MoodleClientError('invalid_parameters', 'A contract is required to call canonical operations.');
-  }
-}
-
-function normaliseMcpEndpoint(endpoint, { allowInsecure = false } = {}) {
-  let resolved;
-  try {
-    resolved = new URL(endpoint);
-  } catch (error) {
-    throw new MoodleClientError('invalid_parameters', 'MCP endpoint must be a valid URL.', {
-      parameter: 'endpoint'
-    }, error);
-  }
-
-  if (resolved.username || resolved.password) {
-    throw new MoodleClientError('invalid_parameters', 'MCP endpoint must not contain credentials.', {
-      parameter: 'endpoint'
-    });
-  }
-
-  if (resolved.protocol !== 'https:' && !(resolved.protocol === 'http:' && (allowInsecure || isLoopbackHostname(resolved.hostname)))) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      'MCP endpoint must use HTTPS. HTTP is allowed only for loopback hosts or when allowInsecure is explicitly enabled.',
-      { parameter: 'endpoint', protocol: resolved.protocol }
-    );
-  }
-
-  resolved.hash = '';
-  return resolved;
-}
-
-function mcpErrorFromPayload(error, method, httpStatus = null) {
-  const canonicalCode = typeof error?.data?.code === 'string'
-    ? error.data.code
-    : (httpStatus && httpStatus >= 500 ? 'transport_error' : 'mcp_error');
-  const details = {
-    method,
-    jsonrpc_code: error?.code
-  };
-
-  if (httpStatus !== null) {
-    details.http_status = httpStatus;
-  }
-  if (error?.data?.details && typeof error.data.details === 'object') {
-    Object.assign(details, error.data.details);
-  }
-
-  return new MoodleClientError(
-    canonicalCode,
-    error?.message || 'MCP request failed.',
-    details
-  );
-}
-
-function toolResultError(operationName, result) {
-  const textItem = Array.isArray(result?.content)
-    ? result.content.find((item) => item?.type === 'text' && typeof item.text === 'string')
-    : null;
-  let payload = null;
-
-  if (textItem) {
-    try {
-      payload = JSON.parse(textItem.text);
-    } catch {
-      payload = null;
-    }
-  }
-
-  return new MoodleClientError(
-    typeof payload?.code === 'string' ? payload.code : 'moodle_error',
-    payload?.message || textItem?.text || `MCP operation ${operationName} failed.`,
-    {
-      operation: operationName,
-      ...(payload?.details && typeof payload.details === 'object' ? payload.details : {})
-    }
-  );
-}
-
-export class McpTransport {
-  constructor({
-    baseUrl,
-    endpoint = null,
-    token,
-    timeoutMs = 30000,
-    fetchImplementation = globalThis.fetch,
-    allowInsecure = false,
-    protocolVersion = '2025-11-25',
-    clientInfo = {
-      name: 'moodlia-node-client',
-      version: '1.0.0'
-    }
-  } = {}) {
-    if ((!baseUrl && !endpoint) || !token) {
-      throw new MoodleClientError(
-        'invalid_parameters',
-        'A Moodle base URL or MCP endpoint and a bearer token are required.',
-        { required: ['baseUrl or endpoint', 'token'] }
-      );
-    }
-    if (typeof fetchImplementation !== 'function') {
-      throw new MoodleClientError('invalid_parameters', 'A fetch implementation is required.');
-    }
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
-      throw new MoodleClientError('invalid_parameters', 'timeoutMs must be a non-negative finite number.', {
-        parameter: 'timeoutMs'
-      });
-    }
-    if (!protocolVersion || typeof protocolVersion !== 'string') {
-      throw new MoodleClientError('invalid_parameters', 'protocolVersion must be a non-empty string.', {
-        parameter: 'protocolVersion'
-      });
-    }
-    if (!clientInfo?.name || !clientInfo?.version) {
-      throw new MoodleClientError('invalid_parameters', 'clientInfo must contain name and version.', {
-        parameter: 'clientInfo'
-      });
-    }
-
-    this.endpoint = endpoint
-      ? normaliseMcpEndpoint(endpoint, { allowInsecure }).toString()
-      : resolveMoodleUrl(baseUrl, 'local/moodlia/mcp.php', { allowInsecure }).toString();
-    this.token = String(token);
-    this.timeoutMs = timeoutMs;
-    this.fetchImplementation = fetchImplementation;
-    this.protocolVersion = protocolVersion;
-    this.clientInfo = {
-      name: String(clientInfo.name),
-      version: String(clientInfo.version)
-    };
-    this.parameterEncoding = 'json';
-    this.supportsCanonicalOperations = true;
-    this.requestId = 0;
-    this.initializationResult = null;
-    this.initializationPromise = null;
-  }
-
-  async request(method, params = {}, { notification = false } = {}) {
-    const id = notification ? null : ++this.requestId;
-    const requestPayload = {
-      jsonrpc: '2.0',
-      method,
-      params
-    };
-    if (!notification) {
-      requestPayload.id = id;
-    }
-
-    const controller = new AbortController();
-    const timeout = this.timeoutMs > 0 ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
-
-    try {
-      let response;
-      try {
-        response = await this.fetchImplementation(this.endpoint, {
-          method: 'POST',
-          headers: {
-            accept: 'application/json, text/event-stream',
-            authorization: `Bearer ${this.token}`,
-            'content-type': 'application/json',
-            'mcp-protocol-version': this.protocolVersion
-          },
-          body: JSON.stringify(requestPayload),
-          redirect: 'error',
-          signal: controller.signal
-        });
-      } catch (error) {
-        throw new MoodleClientError('transport_error', `Moodle MCP request failed: ${error.message}`, {
-          method
-        }, error);
-      }
-
-      const text = await response.text();
-      let payload = null;
-      if (text) {
-        try {
-          payload = JSON.parse(text);
-        } catch (error) {
-          throw new MoodleClientError('transport_error', 'Moodle MCP response was not valid JSON.', {
-            method,
-            http_status: response.status
-          }, error);
-        }
-      }
-
-      if (payload?.error) {
-        throw mcpErrorFromPayload(payload.error, method, response.status);
-      }
-      if (!response.ok) {
-        throw new MoodleClientError('transport_error', `Moodle MCP request failed with HTTP ${response.status}.`, {
-          method,
-          http_status: response.status
-        });
-      }
-      if (notification) {
-        return null;
-      }
-      if (!payload || payload.jsonrpc !== '2.0' || payload.id !== id || !Object.hasOwn(payload, 'result')) {
-        throw new MoodleClientError('transport_error', 'Moodle MCP response was not a valid JSON-RPC response.', {
-          method,
-          request_id: id,
-          response_id: payload?.id
-        });
-      }
-
-      return payload.result;
-    } finally {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    }
-  }
-
-  async initialize() {
-    if (this.initializationResult) {
-      return this.initializationResult;
-    }
-    if (!this.initializationPromise) {
-      this.initializationPromise = (async () => {
-        const result = await this.request('initialize', {
-          protocolVersion: this.protocolVersion,
-          capabilities: {},
-          clientInfo: this.clientInfo
-        });
-        if (!result?.protocolVersion) {
-          throw new MoodleClientError('transport_error', 'Moodle MCP initialize response omitted protocolVersion.', {
-            method: 'initialize'
-          });
-        }
-        this.protocolVersion = result.protocolVersion;
-        await this.request('notifications/initialized', {}, { notification: true });
-        this.initializationResult = result;
-        return result;
-      })();
-    }
-
-    try {
-      return await this.initializationPromise;
-    } catch (error) {
-      this.initializationPromise = null;
-      throw error;
-    }
-  }
-
-  async ping() {
-    await this.initialize();
-    return this.request('ping');
-  }
-
-  async listTools() {
-    await this.initialize();
-    const result = await this.request('tools/list');
-    return result?.tools ?? [];
-  }
-
-  async callOperation(operationName, parameters = {}) {
-    await this.initialize();
-    const result = await this.request('tools/call', {
-      name: operationName,
-      arguments: parameters
-    });
-    if (result?.isError) {
-      throw toolResultError(operationName, result);
-    }
-    if (result && Object.hasOwn(result, 'structuredContent')) {
-      return result.structuredContent;
-    }
-
-    const textItem = Array.isArray(result?.content)
-      ? result.content.find((item) => item?.type === 'text' && typeof item.text === 'string')
-      : null;
-    if (textItem) {
-      try {
-        return JSON.parse(textItem.text);
-      } catch {
-        return textItem.text;
-      }
-    }
-
-    return result;
   }
 }
 
@@ -754,13 +645,10 @@ export class MoodleClient {
       throw new MoodleClientError('invalid_parameters', 'A valid Moodle operation contract is required.');
     }
 
-    if (
-      !transport ||
-      (typeof transport.callFunction !== 'function' && typeof transport.callOperation !== 'function')
-    ) {
+    if (!transport || typeof transport.callFunction !== 'function') {
       throw new MoodleClientError(
         'invalid_parameters',
-        'A transport with callFunction(functionName, parameters) or callOperation(operationName, parameters) is required.'
+        'A REST transport with callFunction(functionName, parameters) is required.'
       );
     }
 
@@ -787,14 +675,11 @@ export class MoodleClient {
 
   async call(operationName, parameters = {}) {
     const operation = this.getOperation(operationName);
-    const useCanonicalOperation = this.transport.supportsCanonicalOperations === true ||
-      typeof this.transport.callFunction !== 'function';
-    const encoding = this.transport.parameterEncoding ??
-      (useCanonicalOperation ? 'json' : 'form');
-    const payload = buildContractParameters(operation, parameters, { encoding });
-    const response = useCanonicalOperation
-      ? await this.transport.callOperation(operation.name, payload)
-      : await this.transport.callFunction(toRestFunctionName(this.contract, operation.name), payload);
+    const payload = buildContractParameters(operation, parameters, { encoding: 'form' });
+    const response = await this.transport.callFunction(
+      toRestFunctionName(this.contract, operation.name),
+      payload
+    );
     return this.validateResponses ? validateContractResponse(operation, response) : response;
   }
 
@@ -803,13 +688,17 @@ export class MoodleClient {
   }
 
   async callFunction(functionName, parameters = {}) {
-    if (typeof this.transport.callFunction !== 'function') {
+    return this.transport.callFunction(functionName, parameters);
+  }
+
+  async uploadDraftFile(filePath, options = {}) {
+    if (typeof this.transport.uploadDraftFile !== 'function') {
       throw new MoodleClientError(
         'invalid_parameters',
-        'The configured transport does not support raw Moodle function calls.'
+        'The configured transport does not support Moodle draft uploads.'
       );
     }
-    return this.transport.callFunction(functionName, parameters);
+    return this.transport.uploadDraftFile(filePath, options);
   }
 }
 
@@ -840,6 +729,7 @@ export function createMoodleClient({
   token,
   contract,
   timeoutMs = 30000,
+  uploadTimeoutMs = 0,
   fetchImplementation = globalThis.fetch,
   allowInsecure = false,
   transport = null,
@@ -849,6 +739,7 @@ export function createMoodleClient({
     baseUrl,
     token,
     timeoutMs,
+    uploadTimeoutMs,
     fetchImplementation,
     allowInsecure
   });
@@ -866,17 +757,4 @@ export function createMoodleRestClient(options = {}) {
   }
 
   return createMoodleClient(options);
-}
-
-export function createMoodleMcpClient(options = {}) {
-  const transport = options.transport ?? new McpTransport(options);
-  if (!options.contract) {
-    return transport;
-  }
-
-  return proxiedClient(new MoodleClient({
-    contract: options.contract,
-    transport,
-    validateResponses: options.validateResponses ?? true
-  }));
 }

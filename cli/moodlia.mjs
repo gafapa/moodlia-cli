@@ -21,6 +21,11 @@ function toSnakeCase(value) {
   return value.replaceAll('-', '_');
 }
 
+function supportsUploadFile(operation) {
+  return Object.hasOwn(operation.parameters ?? {}, 'upload_reference')
+    || operation.name === 'create_module';
+}
+
 function parseArguments(argv) {
   const positional = [];
   const options = {};
@@ -58,22 +63,125 @@ function parseArguments(argv) {
   return { positional, options };
 }
 
+function prepareUploadFileOptions(operation, rawOptions) {
+  const normalizedOptions = { ...rawOptions };
+  if (normalizedOptions.upload_file === undefined) {
+    return { options: normalizedOptions, upload: null };
+  }
+
+  if (!supportsUploadFile(operation)) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      `--upload-file is not supported by ${toKebabCase(operation.name)}.`,
+      { operation: operation.name, parameter: 'upload_file' }
+    );
+  }
+  if (normalizedOptions.upload_file === true) {
+    throw new MoodleClientError('invalid_parameters', '--upload-file requires a local file path.', {
+      operation: operation.name,
+      parameter: 'upload_file'
+    });
+  }
+
+  const uploadFilePath = path.resolve(String(normalizedOptions.upload_file));
+  delete normalizedOptions.upload_file;
+  if (Object.hasOwn(operation.parameters ?? {}, 'upload_reference')) {
+    if (normalizedOptions.upload_reference !== undefined || normalizedOptions.draft_item_id !== undefined) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        'Do not combine --upload-file with --upload-reference or --draft-item-id.',
+        { operation: operation.name, parameters: ['upload_file', 'upload_reference', 'draft_item_id'] }
+      );
+    }
+    normalizedOptions.filename ??= path.basename(uploadFilePath);
+    return {
+      options: normalizedOptions,
+      upload: { filePath: uploadFilePath, filename: normalizedOptions.filename, target: 'operation' }
+    };
+  }
+
+  if (String(normalizedOptions.module_type ?? '') !== 'resource') {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      '--upload-file with create-module requires --module-type resource.',
+      { operation: operation.name, parameter: 'module_type' }
+    );
+  }
+  let resourceOptions = {};
+  if (normalizedOptions.options !== undefined && normalizedOptions.options !== '') {
+    try {
+      resourceOptions = typeof normalizedOptions.options === 'object'
+        ? { ...normalizedOptions.options }
+        : JSON.parse(String(normalizedOptions.options));
+    } catch (error) {
+      throw new MoodleClientError('invalid_parameters', '--options must be valid JSON.', {
+        operation: operation.name,
+        parameter: 'options'
+      }, error);
+    }
+  }
+  if (!resourceOptions || typeof resourceOptions !== 'object' || Array.isArray(resourceOptions)) {
+    throw new MoodleClientError('invalid_parameters', '--options must be a JSON object.', {
+      operation: operation.name,
+      parameter: 'options'
+    });
+  }
+  if (resourceOptions.upload_reference !== undefined || resourceOptions.draft_item_id !== undefined) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      'Do not combine --upload-file with options.upload_reference or options.draft_item_id.',
+      { operation: operation.name, parameters: ['upload_file', 'options.upload_reference', 'options.draft_item_id'] }
+    );
+  }
+  resourceOptions.filename ??= path.basename(uploadFilePath);
+  normalizedOptions.options = resourceOptions;
+  return {
+    options: normalizedOptions,
+    upload: { filePath: uploadFilePath, filename: resourceOptions.filename, target: 'resource_options' }
+  };
+}
+
+async function resolveUploadFile(prepared, client) {
+  if (!prepared.upload) {
+    return prepared.options;
+  }
+
+  const uploaded = await client.uploadDraftFile(prepared.upload.filePath, {
+    filename: prepared.upload.filename
+  });
+  const normalizedOptions = { ...prepared.options };
+  if (prepared.upload.target === 'operation') {
+    normalizedOptions.filename = uploaded.filename;
+    normalizedOptions.draft_item_id = uploaded.draft_item_id;
+    return normalizedOptions;
+  }
+
+  normalizedOptions.options = {
+    ...normalizedOptions.options,
+    filename: uploaded.filename,
+    draft_item_id: uploaded.draft_item_id
+  };
+  return normalizedOptions;
+}
+
 function buildParameters(operation, rawOptions) {
+  const normalizedOptions = { ...rawOptions };
+
   const parameterOptions = {};
   for (const [name, definition] of Object.entries(operation.parameters ?? {})) {
-    if ((rawOptions[name] === undefined || rawOptions[name] === null || rawOptions[name] === '') && definition.required) {
+    if ((normalizedOptions[name] === undefined || normalizedOptions[name] === null || normalizedOptions[name] === '') && definition.required) {
       throw new MoodleClientError('invalid_parameters', `Missing required option --${toKebabCase(name)}.`, {
         operation: operation.name,
         parameter: name
       });
     }
-    if (rawOptions[name] !== undefined) {
-      parameterOptions[name] = rawOptions[name];
+    if (normalizedOptions[name] !== undefined) {
+      parameterOptions[name] = normalizedOptions[name];
     }
   }
 
-  for (const [name, value] of Object.entries(rawOptions)) {
-    if (['format', 'help', 'no_validate_response', 'raw'].includes(name) || value === undefined || value === null || value === '') {
+  for (const [name, value] of Object.entries(normalizedOptions)) {
+    if (['format', 'help', 'no_validate_response', 'raw', 'upload_file'].includes(name) || value === undefined || value === null || value === '') {
       continue;
     }
     if (!Object.hasOwn(operation.parameters ?? {}, name)) {
@@ -131,6 +239,10 @@ function printHelp(contract, operation = null) {
   for (const [name, definition] of Object.entries(operation.parameters)) {
     console.log(`  --${toKebabCase(name)} <${definition.type}>  ${describeOption(definition)}`);
   }
+  if (supportsUploadFile(operation)) {
+    const qualifier = operation.name === 'create_module' ? ' for resource modules' : '';
+    console.log(`  --upload-file <path>  optional${qualifier}; streams a local file to Moodle without a client-side size limit`);
+  }
   console.log('  --format <string>  optional; one of: json');
   console.log('  --no-validate-response  optional; skip contract response validation');
   console.log('  --raw  optional; alias for --no-validate-response');
@@ -167,13 +279,16 @@ async function main() {
     });
   }
 
-  const parameters = buildParameters(operation, options);
+  const prepared = prepareUploadFileOptions(operation, options);
+  buildParameters(operation, prepared.options);
   const client = createMoodleRestClient({
     baseUrl: process.env.MOODLE_BASE_URL,
     token: process.env.MOODLE_REST_TOKEN,
     contract,
     validateResponses: !(options.no_validate_response || options.raw)
   });
+  const resolvedOptions = await resolveUploadFile(prepared, client);
+  const parameters = buildParameters(operation, resolvedOptions);
   const payload = await client.callOperation(operation.name, parameters);
   console.log(JSON.stringify(payload, null, 2));
 }

@@ -1,10 +1,14 @@
 # MoodlIA CLI
 
-Command-line and Node client for MoodlIA Moodle automation over REST and MCP.
+Command-line and Node client for MoodlIA Moodle automation over REST.
 
-This package contains the public Node CLI, the reusable REST/MCP client, generated TypeScript declarations, and the canonical command contract needed by external users. It does not include server-side Moodle plugin files, deployment scripts, tests, or browser automation.
+This package contains the public Node CLI, the reusable REST client, generated TypeScript declarations, and the canonical command contract needed by external users. MCP integrations remain a separate server-side surface and are not bundled into the CLI package. This package does not include server-side Moodle plugin files, deployment scripts, tests, or browser automation.
 
 The package is intentionally small: install the Moodle plugin on the server first, then use this package from developer machines, CI jobs, or automation workers.
+
+## Version 0.2 Transport Scope
+
+Version `0.2.0` makes the package REST-only. It removes the exported `McpTransport` and `createMoodleMcpClient` APIs; command names and REST operation semantics are unchanged. MCP integrations continue through the independent Moodle-hosted endpoint.
 
 ## Requirements
 
@@ -102,6 +106,20 @@ Run `moodlia --help` for the exact command list. The bundled `contract/operation
 
 ## Common Workflows
 
+Upload a local file without placing its base64 content on the command line:
+
+```bash
+moodlia upload-folder-file --course-id 42 --module-id 105 --filename "notes.pdf" --upload-file "./notes.pdf"
+moodlia upload-course-backup --filename "course.mbz" --upload-file "./course.mbz"
+moodlia create-module --course-id 42 --section-number 1 --module-type resource --name "Notes" --upload-file "./notes.pdf"
+```
+
+`--upload-file` streams the local file as multipart data to Moodle's core draft
+upload endpoint, then sends only the returned draft item id to the MoodlIA
+operation. This avoids Base64 expansion and does not impose a client-side size
+limit. Moodle, PHP, and the web server remain responsible for the effective
+upload limit. `--upload-reference` remains available for backward compatibility.
+
 Smoke-check authentication:
 
 ```bash
@@ -194,23 +212,7 @@ const currentUser = await client.get_current_user();
 const courses = await client.get_courses({ limit: 10 });
 ```
 
-Use the same canonical methods through the Moodle-hosted MCP endpoint:
-
-```js
-import { createMoodleMcpClient } from 'moodlia';
-import contract from 'moodlia/contract' with { type: 'json' };
-
-const client = createMoodleMcpClient({
-  baseUrl: process.env.MOODLE_BASE_URL,
-  token: process.env.MOODLE_REST_TOKEN,
-  contract
-});
-
-const tools = await client.transport.listTools();
-const courses = await client.get_courses({ limit: 10 });
-```
-
-The MCP transport lazily negotiates the protocol on its first request. It can also receive an explicit `endpoint` instead of `baseUrl`.
+All canonical operations are translated to `local_moodlia_*` Moodle REST functions. File uploads use Moodle's multipart draft endpoint before the operation receives a `draft_item_id`.
 
 When JSON module imports are not available, load the contract from a local path:
 
@@ -225,8 +227,8 @@ const contract = loadContractFromFile('./node_modules/moodlia/contract/operation
 The npm package includes only:
 
 - `cli/moodlia.mjs`: executable command-line entry point.
-- `client/moodle-rest-client.mjs`: reusable REST/MCP client.
-- `client/moodle-rest-client.d.ts`: TypeScript declarations for the REST/MCP client.
+- `client/moodle-rest-client.mjs`: reusable REST client.
+- `client/moodle-rest-client.d.ts`: TypeScript declarations for the REST client.
 - `client/generated/operation-types.d.ts`: generated request and response types per operation.
 - `contract/operations.json`: publishable command contract.
 - `README.md` and `LICENSE`.
@@ -240,15 +242,9 @@ It intentionally excludes server plugin source, local deployment automation, tes
 - Use a token with only the Moodle capabilities needed for the workflows you automate.
 - Treat JSON command output as Moodle data; it may include course, activity, grade, or participant information depending on the operation and token permissions.
 
-## Development Sync
+## Development
 
-This package is generated from the main MoodlIA development repository with:
-
-```bash
-npm run npm:sync
-```
-
-Do not edit generated files in this package manually. Change the root CLI, shared client, or canonical contract, then sync again.
+The CLI, REST client, declarations, and tests are maintained in this repository. Keep the bundled operation contract aligned with the Moodle plugin before publishing a release.
 
 ## Quality Checks
 

@@ -423,7 +423,8 @@ export interface RestoreCourseBackupParameters {
 
 export interface UploadCourseBackupParameters {
   filename: string;
-  upload_reference: string;
+  upload_reference?: string;
+  draft_item_id?: number;
 }
 
 export interface GetCourseBackupFilesParameters {
@@ -1338,7 +1339,8 @@ export interface UploadFolderFileParameters {
   course_id: number;
   module_id: number;
   filename: string;
-  upload_reference: string;
+  upload_reference?: string;
+  draft_item_id?: number;
 }
 
 export interface GetFolderFilesParameters {

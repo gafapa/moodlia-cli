@@ -25,16 +25,15 @@ export interface MoodleOperationDefinition {
 }
 
 export interface MoodleTransport {
-  callFunction?(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
-  callOperation?(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
-  parameterEncoding?: 'form' | 'json';
-  supportsCanonicalOperations?: boolean;
+  callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  uploadDraftFile?(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
 }
 
 export interface RestTransportOptions {
   baseUrl?: string;
   token?: string;
   timeoutMs?: number;
+  uploadTimeoutMs?: number;
   fetchImplementation?: typeof fetch;
   allowInsecure?: boolean;
 }
@@ -57,26 +56,6 @@ export interface MoodleRestClientOptions extends RestTransportOptions {
   validateResponses?: boolean;
 }
 
-export interface McpTransportOptions {
-  baseUrl?: string;
-  endpoint?: string | null;
-  token?: string;
-  timeoutMs?: number;
-  fetchImplementation?: typeof fetch;
-  allowInsecure?: boolean;
-  protocolVersion?: string;
-  clientInfo?: {
-    name: string;
-    version: string;
-  };
-}
-
-export interface MoodleMcpClientOptions extends McpTransportOptions {
-  contract?: MoodleOperationContract | null;
-  transport?: MoodleTransport | null;
-  validateResponses?: boolean;
-}
-
 export interface MoodleClientInstance {
   readonly contract: MoodleOperationContract;
   readonly transport: MoodleTransport;
@@ -85,27 +64,14 @@ export interface MoodleClientInstance {
   call(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   [operationName: string]: unknown;
 }
 
 export class RestTransport implements MoodleTransport {
-  readonly parameterEncoding: 'form';
-  readonly supportsCanonicalOperations: false;
   constructor(options?: RestTransportOptions);
   callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
-  callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
-}
-
-export class McpTransport implements MoodleTransport {
-  constructor(options?: McpTransportOptions);
-  readonly endpoint: string;
-  readonly parameterEncoding: 'json';
-  readonly supportsCanonicalOperations: true;
-  readonly protocolVersion: string;
-  initialize(): Promise<Record<string, unknown>>;
-  ping(): Promise<unknown>;
-  listTools(): Promise<unknown[]>;
-  callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
 }
 
 export class MoodleClient implements MoodleClientInstance {
@@ -117,6 +83,7 @@ export class MoodleClient implements MoodleClientInstance {
   call(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   [operationName: string]: unknown;
 }
 
@@ -134,6 +101,30 @@ export class MoodleClientError extends Error {
 
 export function loadEnvFile(filePath: string): void;
 export function loadContractFromFile(contractPath: string): MoodleOperationContract;
+export function encodeFileForUpload(filePath: string): string;
+export interface DraftUploadOptions {
+  filename?: string | null;
+  filepath?: string;
+  itemId?: number;
+  timeoutMs?: number;
+}
+export interface DraftUploadResult {
+  draft_item_id: number;
+  filename: string;
+  filepath: string;
+  filesize: number;
+}
+export function uploadFileToMoodleDraft(options: {
+  baseUrl: string;
+  token: string;
+  filePath: string;
+  filename?: string | null;
+  filepath?: string;
+  itemId?: number;
+  timeoutMs?: number;
+  fetchImplementation?: typeof fetch;
+  allowInsecure?: boolean;
+}): Promise<DraftUploadResult>;
 export function toRestFunctionName(contract: MoodleOperationContract, operationName: string): string;
 export function resolveMoodleUrl(
   baseUrl: string,
@@ -156,4 +147,3 @@ export function validateContractResponse(
 ): unknown;
 export function createMoodleClient(options: MoodleClientFactoryOptions): MoodleClientInstance;
 export function createMoodleRestClient(options?: MoodleRestClientOptions): MoodleClientInstance | RestTransport;
-export function createMoodleMcpClient(options?: MoodleMcpClientOptions): MoodleClientInstance | McpTransport;

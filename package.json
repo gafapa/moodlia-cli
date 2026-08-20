@@ -1,11 +1,18 @@
 {
   "name": "moodlia",
-  "version": "0.1.19",
-  "description": "Command-line and Node client for MoodlIA Moodle automation over REST and MCP.",
+  "version": "0.2.0",
+  "description": "Command-line and Node client for MoodlIA Moodle automation over REST.",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "author": "Pablo Gallego",
   "homepage": "https://moodlia.com/products/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gafapa/moodlia-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gafapa/moodlia-cli/issues"
+  },
   "main": "./client/moodle-rest-client.mjs",
   "types": "./client/moodle-rest-client.d.ts",
   "sideEffects": false,
@@ -31,7 +38,6 @@
     "moodlia",
     "cli",
     "rest",
-    "mcp",
     "automation"
   ],
   "scripts": {
