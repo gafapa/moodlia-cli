@@ -64,6 +64,42 @@ test('validates and coerces contract parameters', () => {
   assert.throws(() => buildContractParameters(operation, { course_id: 1, unknown: true }), /Unknown parameter/);
 });
 
+test('accepts integer arrays for global completion criteria', () => {
+  const operation = {
+    name: 'set_course_completion_criteria',
+    parameters: {
+      course_id: { type: 'integer', required: true, minimum: 1 },
+      required_module_ids: { type: 'array', items: 'integer' }
+    }
+  };
+
+  assert.deepEqual(buildContractParameters(operation, {
+    course_id: '2604',
+    required_module_ids: '[12591,12592]'
+  }), {
+    course_id: 2604,
+    required_module_ids: [12591, 12592]
+  });
+  assert.throws(
+    () => buildContractParameters(operation, { course_id: 2604, required_module_ids: '[12591,"quiz"]' }),
+    /only integers/
+  );
+});
+
+test('CLI recognises the course completion configuration command', async () => {
+  const result = await runCli([
+    'set-course-completion-criteria',
+    '--course-id', '2604',
+    '--required-module-ids', '[12591,12592]',
+    '--required-course-grade-percent', '80'
+  ]);
+
+  assert.equal(result.code, 1);
+  const error = JSON.parse(result.stderr.trim());
+  assert.equal(error.code, 'invalid_parameters');
+  assert.match(error.message, /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/);
+});
+
 test('retains legacy base64 upload encoding for backward compatibility', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'moodlia-upload-'));
   const filePath = path.join(directory, 'larger-than-old-plugin-limit.bin');
@@ -147,6 +183,24 @@ test('REST transport sends canonical Moodle form fields and preserves subdirecto
   assert.equal(request.init.redirect, 'error');
   assert.equal(request.init.body.get('wsfunction'), 'core_course_get_courses');
   assert.equal(request.init.body.get('includehidden'), '0');
+});
+
+test('REST transport encodes integer arrays as Moodle external-function fields', async () => {
+  let request;
+  const transport = new RestTransport({
+    baseUrl: 'https://example.test/moodle',
+    token: 'secret-token',
+    fetchImplementation: async (_url, init) => {
+      request = init;
+      return new Response(JSON.stringify({ configured: true }), { status: 200 });
+    }
+  });
+
+  await transport.callFunction('local_moodlia_set_course_completion_criteria', {
+    required_module_ids: [12591, 12592]
+  });
+  assert.equal(request.body.get('required_module_ids[0]'), '12591');
+  assert.equal(request.body.get('required_module_ids[1]'), '12592');
 });
 
 test('REST transport preserves Moodle business error details', async () => {

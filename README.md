@@ -94,7 +94,7 @@ moodlia create-question --category-id 12 --context-id 34 --question-type multich
 
 ## Capabilities
 
-The package currently exposes 240 CLI commands generated from the shared operation contract:
+The package currently exposes 243 CLI commands generated from the shared operation contract:
 
 - Course and category management: 22 commands.
 - Calendar, enrolments, groups, and completion: 27 commands.
@@ -180,7 +180,13 @@ moodlia set-assignment-marking-guide --course-id 42 --module-id 201 --name "Teac
 moodlia grade-assignment-with-marking-guide --course-id 42 --module-id 201 --user-id 7 --criteria "{\"criteria\":[{\"criterion_id\":101,\"score\":35,\"remark\":\"Mostly accurate.\"}]}"
 moodlia create-forum-discussion --course-id 42 --module-id 301 --name "Week 1 discussion" --message "<p>What did you learn?</p>"
 moodlia get-grade-items --course-id 42
+moodlia update-grade-item --course-id 42 --item-id 801 --grade-pass 8 --category-id 50 --weight 1
+moodlia set-course-grade-pass --course-id 42 --grade-pass-percent 80
+moodlia set-course-completion-criteria --course-id 42 --required-module-ids '[201,202,203]' --require-all-activities true --required-course-grade-percent 80 --criteria-aggregation all
+moodlia get-course-completion-criteria --course-id 42
 ```
+
+The completion command requires course-module ids (not activity instance ids) and activity completion tracking to be enabled for each selected activity. It safely refuses to replace criteria after Moodle has created completion records. `get-grade-items` includes grade ranges, pass grades, categories, weights, visibility, locks, owning activities, and total contribution so the result can be checked before publishing a course.
 
 MoodlIA uses Moodle core advanced grading APIs. Checklist commands are stored as binary Moodle rubrics when the Moodle site does not have a native checklist advanced grading form installed.
 

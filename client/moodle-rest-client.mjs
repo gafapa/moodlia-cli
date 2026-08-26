@@ -362,6 +362,22 @@ function coerceParameter(value, definition, key, encoding = 'form') {
       }
       return encoding === 'json' ? parsed : encoded;
     }
+    case 'array': {
+      const encoded = Array.isArray(value) ? value : String(value);
+      let parsed;
+      try {
+        parsed = Array.isArray(encoded) ? encoded : JSON.parse(encoded);
+      } catch (error) {
+        throw new MoodleClientError('invalid_parameters', `${key} must be a valid JSON array.`, { parameter: key }, error);
+      }
+      if (!Array.isArray(parsed)) {
+        throw new MoodleClientError('invalid_parameters', `${key} must be a JSON array.`, { parameter: key });
+      }
+      if (definition.items === 'integer' && parsed.some((item) => !Number.isInteger(Number(item)))) {
+        throw new MoodleClientError('invalid_parameters', `${key} must contain only integers.`, { parameter: key });
+      }
+      return definition.items === 'integer' ? parsed.map((item) => Number(item)) : parsed;
+    }
     default:
       validateEnum(value, definition, key);
       return String(value);
@@ -573,10 +589,17 @@ export class RestTransport {
       moodlewsrestformat: 'json'
     });
 
-    for (const [key, value] of Object.entries(parameters)) {
+    const appendParameter = (key, value) => {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => appendParameter(`${key}[${index}]`, item));
+        return;
+      }
       if (value !== undefined && value !== null) {
         body.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
       }
+    };
+    for (const [key, value] of Object.entries(parameters)) {
+      appendParameter(key, value);
     }
 
     const controller = new AbortController();
