@@ -139,6 +139,7 @@ moodlia create-course-category --name "Generated Courses" --visible true --reuse
 moodlia create-course --fullname "MoodlIA Demo Course" --shortname "moodlia-demo-001" --category-id 12 --visible true --enable-completion true
 moodlia move-course --course-id 42 --category-id 12
 moodlia create-section --course-id 42 --name "Unit 1" --summary "<p>Introduction.</p>" --summary-format html --visible true
+moodlia update-section --course-id 42 --section-id 7 --summary "<details><summary>More information</summary><p>Open this section for details.</p></details>" --summary-format html --format json
 moodlia create-module --course-id 42 --section-number 1 --module-type page --name "Reading" --options "{\"content\":\"<p>Read this first.</p>\"}"
 ```
 
