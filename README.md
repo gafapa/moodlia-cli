@@ -8,8 +8,9 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.1` keeps the package REST-only and adds explicit `html` or `plain`
-summary formats to section creation and updates. Version `0.2.0` removed the
+Version `0.2.2` keeps the package REST-only, preserves portable HTML section
+summaries, and supports explicit `html` or `plain` summary formats for section
+creation and updates. Version `0.2.0` removed the
 exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
 continue through the independent Moodle-hosted endpoint.
 
