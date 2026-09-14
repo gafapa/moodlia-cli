@@ -8,9 +8,9 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.2` keeps the package REST-only, preserves portable HTML section
-summaries, and supports explicit `html` or `plain` summary formats for section
-creation and updates. Version `0.2.0` removed the
+Version `0.2.3` keeps the package REST-only, adds native section summary file
+uploads and UTF-8 `--summary-file` input, and supports explicit `html` or
+`plain` summary formats for section creation and updates. Version `0.2.0` removed the
 exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
 continue through the independent Moodle-hosted endpoint.
 
@@ -116,6 +116,7 @@ Upload a local file without placing its base64 content on the command line:
 moodlia upload-folder-file --course-id 42 --module-id 105 --filename "notes.pdf" --upload-file "./notes.pdf"
 moodlia upload-course-backup --filename "course.mbz" --upload-file "./course.mbz"
 moodlia create-module --course-id 42 --section-number 1 --module-type resource --name "Notes" --upload-file "./notes.pdf"
+moodlia update-section --course-id 42 --section-id 7 --summary-file "./section.html" --summary-format html --upload-file "./hero.jpg"
 ```
 
 `--upload-file` streams the local file as multipart data to Moodle's core draft
@@ -123,6 +124,11 @@ upload endpoint, then sends only the returned draft item id to the MoodlIA
 operation. This avoids Base64 expansion and does not impose a client-side size
 limit. Moodle, PHP, and the web server remain responsible for the effective
 upload limit. `--upload-reference` remains available for backward compatibility.
+
+`update-section --summary-file <path>` reads the section summary as UTF-8 and
+can be combined with one `--upload-file`. Use `@@PLUGINFILE@@/filename.ext` in
+the HTML to reference the attached file. `--summary-file` is mutually exclusive
+with `--summary`; the local path is never sent to Moodle.
 
 Smoke-check authentication:
 

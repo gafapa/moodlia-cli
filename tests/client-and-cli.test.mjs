@@ -266,6 +266,182 @@ test('section commands accept HTML summaries from the shared contract', async ()
   assert.match(JSON.parse(rejected.stderr.trim()).message, /summary_format must be one of: html, plain/);
 });
 
+test('update-section help exposes local summary and upload file options', async () => {
+  const result = await runCli(['update-section', '--help']);
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /--summary-file <path>\s+optional; reads the section summary from a UTF-8 file/);
+  assert.match(result.stdout, /--upload-file <path>/);
+});
+
+test('update-section reads UTF-8 summary content and uploads a Unicode path', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia sección con espacios-'));
+  const summaryPath = path.join(directory, 'inicio ágil.html');
+  const imagePath = path.join(directory, 'equipo héroe ü.jpg');
+  const summary = '<figure><img src="@@PLUGINFILE@@/equipo héroe ü.jpg" alt="Equipo"></figure>';
+  const image = Buffer.from('section image bytes');
+  const requests = [];
+  const token = 'sensitive-token-never-output';
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    requests.push({
+      url: request.url,
+      contentType: request.headers['content-type'] ?? '',
+      body: Buffer.concat(chunks)
+    });
+
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/webservice/upload.php') {
+      response.end(JSON.stringify([{
+        itemid: 913,
+        filename: 'equipo héroe ü.jpg',
+        filepath: '/',
+        filesize: image.length
+      }]));
+      return;
+    }
+    response.end(JSON.stringify({
+      section_id: 7708,
+      course_id: 2609,
+      section_number: 1,
+      name: 'Start',
+      summary: '<figure><img src="https://moodle.test/pluginfile.php/image.jpg" alt="Equipo"></figure>',
+      summary_format: 'html',
+      visible: true,
+      uploaded_files: [{
+        file_id: 451,
+        filename: 'equipo héroe ü.jpg',
+        url: 'https://moodle.test/pluginfile.php/image.jpg',
+        filepath: '/',
+        filesize: image.length,
+        mimetype: 'image/jpeg',
+        time_modified: 1
+      }]
+    }));
+  });
+
+  try {
+    await writeFile(summaryPath, summary, 'utf8');
+    await writeFile(imagePath, image);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    const result = await runCli([
+      'update-section',
+      '--course-id', '2609',
+      '--section-id', '7708',
+      '--summary-file', summaryPath,
+      '--summary-format', 'html',
+      '--upload-file', imagePath,
+      '--format', 'json'
+    ], {
+      env: {
+        MOODLE_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MOODLE_REST_TOKEN: token
+      }
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout.includes(token), false);
+    assert.equal(result.stderr.includes(token), false);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, '/webservice/upload.php');
+    assert.match(requests[0].contentType, /^multipart\/form-data; boundary=/);
+    assert.equal(requests[0].body.includes(image), true);
+
+    const parameters = new URLSearchParams(requests[1].body.toString('utf8'));
+    assert.equal(requests[1].url, '/webservice/rest/server.php');
+    assert.equal(parameters.get('wsfunction'), 'local_moodlia_update_section');
+    assert.equal(parameters.get('summary'), summary);
+    assert.equal(parameters.has('summary_file'), false);
+    assert.equal(parameters.get('filename'), 'equipo héroe ü.jpg');
+    assert.equal(parameters.get('draft_item_id'), '913');
+    assert.equal(parameters.has('upload_reference'), false);
+
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.uploaded_files.length, 1);
+    assert.equal(output.uploaded_files[0].filename, 'equipo héroe ü.jpg');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('update-section rejects missing upload files without exposing the token', async () => {
+  const missingPath = path.join(tmpdir(), 'carpeta con tilde', 'imagen inexistente á.jpg');
+  const token = 'sensitive-token-never-output';
+  const result = await runCli([
+    'update-section',
+    '--course-id', '2609',
+    '--section-id', '7708',
+    '--upload-file', missingPath
+  ], {
+    env: {
+      MOODLE_BASE_URL: 'http://127.0.0.1:1',
+      MOODLE_REST_TOKEN: token
+    }
+  });
+
+  assert.equal(result.code, 1);
+  const error = JSON.parse(result.stderr.trim());
+  assert.equal(error.code, 'invalid_parameters');
+  assert.match(error.message, /Unable to read upload file/);
+  assert.equal(result.stdout.includes(token), false);
+  assert.equal(result.stderr.includes(token), false);
+});
+
+test('update-section rejects conflicting local and contract options', async () => {
+  const uploadConflict = await runCli([
+    'update-section',
+    '--course-id', '2609',
+    '--section-id', '7708',
+    '--upload-file', 'image.jpg',
+    '--draft-item-id', '913'
+  ]);
+  assert.equal(uploadConflict.code, 1);
+  assert.match(JSON.parse(uploadConflict.stderr.trim()).message, /Do not combine --upload-file/);
+
+  const summaryConflict = await runCli([
+    'update-section',
+    '--course-id', '2609',
+    '--section-id', '7708',
+    '--summary', '<p>Inline</p>',
+    '--summary-file', 'section.html'
+  ]);
+  assert.equal(summaryConflict.code, 1);
+  assert.match(JSON.parse(summaryConflict.stderr.trim()).message, /Do not combine --summary with --summary-file/);
+});
+
+test('update-section allows an inline summary with one local upload file', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia-inline-summary-'));
+  const imagePath = path.join(directory, 'hero.jpg');
+
+  try {
+    await writeFile(imagePath, 'image bytes');
+    const result = await runCli([
+      'update-section',
+      '--course-id', '2609',
+      '--section-id', '7708',
+      '--summary', '<p><img src="@@PLUGINFILE@@/hero.jpg" alt="Hero"></p>',
+      '--summary-format', 'html',
+      '--upload-file', imagePath
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.match(
+      JSON.parse(result.stderr.trim()).message,
+      /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('CLI upload commands expose the unlimited local file option', async () => {
   const result = await runCli(['upload-folder-file', '--help']);
   assert.equal(result.code, 0);

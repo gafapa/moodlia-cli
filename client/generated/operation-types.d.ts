@@ -515,6 +515,9 @@ export interface UpdateSectionParameters {
   summary?: string;
   summary_format?: "html" | "plain";
   visible?: boolean;
+  filename?: string;
+  upload_reference?: string;
+  draft_item_id?: number;
 }
 
 export interface DeleteSectionParameters {
@@ -2610,6 +2613,15 @@ export interface UpdateSectionResponse {
   summary: string;
   summary_format: string;
   visible: boolean;
+  uploaded_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    time_modified: number;
+  }[];
 }
 
 export interface DeleteSectionResponse {
