@@ -310,6 +310,106 @@ test('update-assignment accepts HTML content with one local editor file', async 
   }
 });
 
+test('Book chapter commands expose local file uploads', async () => {
+  for (const command of ['create-book-chapter', 'update-book-chapter']) {
+    const result = await runCli([command, '--help']);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /--draft-item-id <integer>/);
+    assert.match(result.stdout, /--upload-file <path>/);
+  }
+});
+
+test('create-book-chapter uploads a Unicode path and passes the draft item id', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia capítulo con espacios-'));
+  const imagePath = path.join(directory, 'imagen héroe ü.jpg');
+  const image = Buffer.from('Book chapter image bytes');
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    requests.push({
+      url: request.url,
+      body: Buffer.concat(chunks)
+    });
+
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/webservice/upload.php') {
+      response.end(JSON.stringify([{
+        itemid: 927,
+        filename: 'imagen héroe ü.jpg',
+        filepath: '/',
+        filesize: image.length
+      }]));
+      return;
+    }
+    response.end(JSON.stringify({
+      chapter_id: 301,
+      book_id: 201,
+      module_id: 105,
+      title: 'Portable chapter',
+      content: '<p><img src="https://moodle.test/pluginfile.php/image.jpg" alt="Hero"></p>',
+      content_format: 1,
+      page_number: 1,
+      subchapter: false,
+      hidden: false,
+      parent_chapter_id: 0,
+      previous_chapter_id: 0,
+      next_chapter_id: 0,
+      url: 'https://moodle.test/mod/book/view.php?id=105&chapterid=301',
+      uploaded_files: [{
+        file_id: 510,
+        filename: 'imagen héroe ü.jpg',
+        url: 'https://moodle.test/pluginfile.php/image.jpg',
+        filepath: '/',
+        filesize: image.length,
+        mimetype: 'image/jpeg',
+        time_modified: 1
+      }]
+    }));
+  });
+
+  try {
+    await writeFile(imagePath, image);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    const result = await runCli([
+      'create-book-chapter',
+      '--course-id', '42',
+      '--module-id', '105',
+      '--title', 'Portable chapter',
+      '--content', '<p><img src="@@PLUGINFILE@@/imagen%20héroe%20ü.jpg" alt="Hero"></p>',
+      '--content-format', '1',
+      '--upload-file', imagePath,
+      '--format', 'json'
+    ], {
+      env: {
+        MOODLE_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MOODLE_REST_TOKEN: 'book-test-token'
+      }
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, '/webservice/upload.php');
+    assert.equal(requests[0].body.includes(image), true);
+    const parameters = new URLSearchParams(requests[1].body.toString('utf8'));
+    assert.equal(parameters.get('wsfunction'), 'local_moodlia_create_book_chapter');
+    assert.equal(parameters.get('filename'), 'imagen héroe ü.jpg');
+    assert.equal(parameters.get('draft_item_id'), '927');
+    assert.equal(parameters.has('upload_reference'), false);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.uploaded_files[0].filename, 'imagen héroe ü.jpg');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('update-section reads UTF-8 summary content and uploads a Unicode path', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'moodlia sección con espacios-'));
   const summaryPath = path.join(directory, 'inicio ágil.html');

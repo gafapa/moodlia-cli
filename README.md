@@ -8,8 +8,9 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.4` keeps the package REST-only and adds assignment name,
-description, activity-instruction, and editor-file updates. Version `0.2.3`
+Version `0.2.5` keeps the package REST-only and adds streamed editor-file
+uploads to Book chapter creation and updates. Version `0.2.4` added assignment
+name, description, activity-instruction, and editor-file updates. Version `0.2.3`
 added native section summary file uploads and UTF-8 `--summary-file` input.
 Version `0.2.0` removed the
 exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
@@ -119,6 +120,7 @@ moodlia upload-course-backup --filename "course.mbz" --upload-file "./course.mbz
 moodlia create-module --course-id 42 --section-number 1 --module-type resource --name "Notes" --upload-file "./notes.pdf"
 moodlia update-section --course-id 42 --section-id 7 --summary-file "./section.html" --summary-format html --upload-file "./hero.jpg"
 moodlia update-assignment --course-id 42 --module-id 201 --intro '<p><img src="@@PLUGINFILE@@/brief.jpg" alt="Assignment brief"></p>' --intro-format html --upload-file "./brief.jpg" --file-area intro
+moodlia create-book-chapter --course-id 42 --module-id 202 --title "Illustrated chapter" --content '<p><img src="@@PLUGINFILE@@/chapter-hero.jpg" alt="Chapter hero"></p>' --upload-file "./chapter-hero.jpg"
 ```
 
 `--upload-file` streams the local file as multipart data to Moodle's core draft
@@ -137,6 +139,11 @@ with `--summary`; the local path is never sent to Moodle.
 `plain` formats. Combine the command with one `--upload-file` and select
 `--file-area intro` or `--file-area activity`; reference the file from the
 matching HTML field as `@@PLUGINFILE@@/filename.ext`.
+
+`create-book-chapter` and `update-book-chapter` also accept one
+`--upload-file`. The server stores it in Moodle's native `mod_book/chapter`
+file area under the chapter id, so `@@PLUGINFILE@@/filename.ext` references
+remain valid after native course backup and restore.
 
 Smoke-check authentication:
 
@@ -164,7 +171,9 @@ Create and manage Book chapters:
 moodlia create-module --course-id 42 --section-number 1 --module-type book --name "Course guide" --options "{\"intro\":\"<p>Guide intro.</p>\",\"numbering\":\"numbers\"}"
 moodlia create-book-chapter --course-id 42 --module-id 201 --title "Chapter 1" --content "<p>Opening content.</p>"
 moodlia create-book-chapter --course-id 42 --module-id 201 --title "Chapter 1.1" --content "<p>Nested content.</p>" --after-chapter-id 301 --subchapter true
+moodlia create-book-chapter --course-id 42 --module-id 201 --title "Illustrated chapter" --content '<p><img src="@@PLUGINFILE@@/chapter-hero.jpg" alt="Chapter hero"></p>' --upload-file "./chapter-hero.jpg"
 moodlia update-book-chapter --course-id 42 --module-id 201 --chapter-id 301 --title "Updated chapter" --content "<p>Updated content.</p>"
+moodlia update-book-chapter --course-id 42 --module-id 201 --chapter-id 301 --content '<p><img src="@@PLUGINFILE@@/new-image.png" alt="New image"></p>' --upload-file "./new-image.png"
 moodlia move-book-chapter --course-id 42 --module-id 201 --chapter-id 302 --after-chapter-id 0
 moodlia get-book-chapters --course-id 42 --module-id 201 --include-content true
 moodlia delete-book-chapter --course-id 42 --module-id 201 --chapter-id 302

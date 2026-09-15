@@ -583,6 +583,9 @@ export interface CreateBookChapterParameters {
   subchapter?: boolean;
   after_chapter_id?: number;
   hidden?: boolean;
+  filename?: string;
+  upload_reference?: string;
+  draft_item_id?: number;
 }
 
 export interface UpdateBookChapterParameters {
@@ -594,6 +597,9 @@ export interface UpdateBookChapterParameters {
   content_format?: number;
   subchapter?: boolean;
   hidden?: boolean;
+  filename?: string;
+  upload_reference?: string;
+  draft_item_id?: number;
 }
 
 export interface MoveBookChapterParameters {
@@ -2795,6 +2801,15 @@ export interface CreateBookChapterResponse {
   previous_chapter_id: number;
   next_chapter_id: number;
   url: string;
+  uploaded_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    time_modified: number;
+  }[];
 }
 
 export interface UpdateBookChapterResponse {
@@ -2811,6 +2826,15 @@ export interface UpdateBookChapterResponse {
   previous_chapter_id: number;
   next_chapter_id: number;
   url: string;
+  uploaded_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    time_modified: number;
+  }[];
 }
 
 export interface MoveBookChapterResponse {
