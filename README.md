@@ -8,9 +8,10 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.3` keeps the package REST-only, adds native section summary file
-uploads and UTF-8 `--summary-file` input, and supports explicit `html` or
-`plain` summary formats for section creation and updates. Version `0.2.0` removed the
+Version `0.2.4` keeps the package REST-only and adds assignment name,
+description, activity-instruction, and editor-file updates. Version `0.2.3`
+added native section summary file uploads and UTF-8 `--summary-file` input.
+Version `0.2.0` removed the
 exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
 continue through the independent Moodle-hosted endpoint.
 
@@ -95,16 +96,16 @@ moodlia create-question --category-id 12 --context-id 34 --question-type multich
 
 ## Capabilities
 
-The package currently exposes 243 CLI commands generated from the shared operation contract:
+The package currently exposes 244 CLI commands generated from the shared operation contract:
 
 - Course and category management: 22 commands.
 - Calendar, enrolments, groups, and completion: 27 commands.
 - Sections, modules, resources, and files: 15 commands.
-- Assignments, forums, glossaries, wikis, and books: 57 commands.
+- Assignments, forums, glossaries, wikis, and books: 58 commands.
 - Choice, Database, Feedback, Lesson, and Workshop: 49 commands.
 - Question banks and quiz workflows: 34 commands.
 - Moodle plugin inventory and state: 5 commands.
-- Other utility operations: 31 commands.
+- Other utility operations: 34 commands.
 
 Run `moodlia --help` for the exact command list. The bundled `contract/operations.json` file contains parameter schemas, return schemas, command names, and enum values.
 
@@ -117,6 +118,7 @@ moodlia upload-folder-file --course-id 42 --module-id 105 --filename "notes.pdf"
 moodlia upload-course-backup --filename "course.mbz" --upload-file "./course.mbz"
 moodlia create-module --course-id 42 --section-number 1 --module-type resource --name "Notes" --upload-file "./notes.pdf"
 moodlia update-section --course-id 42 --section-id 7 --summary-file "./section.html" --summary-format html --upload-file "./hero.jpg"
+moodlia update-assignment --course-id 42 --module-id 201 --intro '<p><img src="@@PLUGINFILE@@/brief.jpg" alt="Assignment brief"></p>' --intro-format html --upload-file "./brief.jpg" --file-area intro
 ```
 
 `--upload-file` streams the local file as multipart data to Moodle's core draft
@@ -129,6 +131,12 @@ upload limit. `--upload-reference` remains available for backward compatibility.
 can be combined with one `--upload-file`. Use `@@PLUGINFILE@@/filename.ext` in
 the HTML to reference the attached file. `--summary-file` is mutually exclusive
 with `--summary`; the local path is never sent to Moodle.
+
+`update-assignment` changes only the supplied authoring fields: `--name`,
+`--intro`, or `--activity`. The two HTML fields accept independent `html` or
+`plain` formats. Combine the command with one `--upload-file` and select
+`--file-area intro` or `--file-area activity`; reference the file from the
+matching HTML field as `@@PLUGINFILE@@/filename.ext`.
 
 Smoke-check authentication:
 
@@ -177,6 +185,7 @@ Work with assignments, forums, and grades:
 
 ```bash
 moodlia create-module --course-id 42 --section-number 1 --module-type assign --name "Essay" --options "{\"online_text\":true,\"file_submissions\":false,\"grade\":10}"
+moodlia update-assignment --course-id 42 --module-id 201 --intro "<p>Write a structured essay.</p>" --intro-format html
 moodlia save-assignment-submission --course-id 42 --module-id 201 --online-text "<p>My submission.</p>"
 moodlia submit-assignment-for-grading --course-id 42 --module-id 201
 moodlia set-assignment-rubric --course-id 42 --module-id 201 --name "Writing rubric" --criteria "{\"criteria\":[{\"description\":\"Content quality\",\"levels\":[{\"definition\":\"Missing\",\"score\":0},{\"definition\":\"Strong\",\"score\":10}]}]}"

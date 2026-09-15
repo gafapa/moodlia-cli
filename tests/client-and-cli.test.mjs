@@ -274,6 +274,42 @@ test('update-section help exposes local summary and upload file options', async 
   assert.match(result.stdout, /--upload-file <path>/);
 });
 
+test('update-assignment help exposes authoring fields and editor uploads', async () => {
+  const result = await runCli(['update-assignment', '--help']);
+
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /--intro <string>/);
+  assert.match(result.stdout, /--activity <string>/);
+  assert.match(result.stdout, /--file-area <string>\s+optional; one of: intro, activity/);
+  assert.match(result.stdout, /--upload-file <path>/);
+});
+
+test('update-assignment accepts HTML content with one local editor file', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia-assignment-content-'));
+  const imagePath = path.join(directory, 'tarea héroe.jpg');
+
+  try {
+    await writeFile(imagePath, 'assignment image bytes');
+    const result = await runCli([
+      'update-assignment',
+      '--course-id', '2609',
+      '--module-id', '7710',
+      '--intro', '<p><img src="@@PLUGINFILE@@/tarea héroe.jpg" alt="Hero"></p>',
+      '--intro-format', 'html',
+      '--upload-file', imagePath,
+      '--file-area', 'intro'
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.match(
+      JSON.parse(result.stderr.trim()).message,
+      /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('update-section reads UTF-8 summary content and uploads a Unicode path', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'moodlia sección con espacios-'));
   const summaryPath = path.join(directory, 'inicio ágil.html');
