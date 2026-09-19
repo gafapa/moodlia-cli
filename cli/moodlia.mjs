@@ -31,6 +31,104 @@ function supportsSummaryFile(operation) {
   return operation.name === 'update_section';
 }
 
+function supportsContentFile(operation) {
+  return Object.hasOwn(operation.parameters ?? {}, 'content');
+}
+
+function supportsAssignmentContentFiles(operation) {
+  return operation.name === 'update_assignment';
+}
+
+async function prepareAssignmentContentFileOptions(operation, rawOptions) {
+  const normalizedOptions = { ...rawOptions };
+
+  for (const field of ['intro', 'activity']) {
+    const localOption = `${field}_file`;
+    if (normalizedOptions[localOption] === undefined) {
+      continue;
+    }
+    if (!supportsAssignmentContentFiles(operation)) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        `--${toKebabCase(localOption)} is not supported by ${toKebabCase(operation.name)}.`,
+        { operation: operation.name, parameter: localOption }
+      );
+    }
+    if (normalizedOptions[localOption] === true) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        `--${toKebabCase(localOption)} requires a local file path.`,
+        { operation: operation.name, parameter: localOption }
+      );
+    }
+    if (normalizedOptions[field] !== undefined) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        `Do not combine --${toKebabCase(field)} with --${toKebabCase(localOption)}.`,
+        { operation: operation.name, parameters: [field, localOption] }
+      );
+    }
+
+    const contentFilePath = path.resolve(String(normalizedOptions[localOption]));
+    delete normalizedOptions[localOption];
+    try {
+      normalizedOptions[field] = await fs.readFile(contentFilePath, 'utf8');
+    } catch (error) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        `Unable to read ${field} file: ${contentFilePath}`,
+        { operation: operation.name, parameter: localOption, file_path: contentFilePath },
+        error
+      );
+    }
+  }
+
+  return normalizedOptions;
+}
+
+async function prepareContentFileOptions(operation, rawOptions) {
+  const normalizedOptions = { ...rawOptions };
+  if (normalizedOptions.content_file === undefined) {
+    return normalizedOptions;
+  }
+
+  if (!supportsContentFile(operation)) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      `--content-file is not supported by ${toKebabCase(operation.name)}.`,
+      { operation: operation.name, parameter: 'content_file' }
+    );
+  }
+  if (normalizedOptions.content_file === true) {
+    throw new MoodleClientError('invalid_parameters', '--content-file requires a local file path.', {
+      operation: operation.name,
+      parameter: 'content_file'
+    });
+  }
+  if (normalizedOptions.content !== undefined) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      'Do not combine --content with --content-file.',
+      { operation: operation.name, parameters: ['content', 'content_file'] }
+    );
+  }
+
+  const contentFilePath = path.resolve(String(normalizedOptions.content_file));
+  delete normalizedOptions.content_file;
+  try {
+    normalizedOptions.content = await fs.readFile(contentFilePath, 'utf8');
+  } catch (error) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      `Unable to read content file: ${contentFilePath}`,
+      { operation: operation.name, parameter: 'content_file', file_path: contentFilePath },
+      error
+    );
+  }
+
+  return normalizedOptions;
+}
+
 async function prepareSummaryFileOptions(operation, rawOptions) {
   const normalizedOptions = { ...rawOptions };
   if (normalizedOptions.summary_file === undefined) {
@@ -228,8 +326,19 @@ function buildParameters(operation, rawOptions) {
     }
   }
 
+  const localOptionNames = [
+    'format',
+    'help',
+    'no_validate_response',
+    'raw',
+    'upload_file',
+    'summary_file',
+    'content_file',
+    'intro_file',
+    'activity_file'
+  ];
   for (const [name, value] of Object.entries(normalizedOptions)) {
-    if (['format', 'help', 'no_validate_response', 'raw', 'upload_file', 'summary_file'].includes(name) || value === undefined || value === null || value === '') {
+    if (localOptionNames.includes(name) || value === undefined || value === null || value === '') {
       continue;
     }
     if (!Object.hasOwn(operation.parameters ?? {}, name)) {
@@ -294,6 +403,13 @@ function printHelp(contract, operation = null) {
   if (supportsSummaryFile(operation)) {
     console.log('  --summary-file <path>  optional; reads the section summary from a UTF-8 file');
   }
+  if (supportsContentFile(operation)) {
+    console.log('  --content-file <path>  optional; reads the operation content from a UTF-8 file');
+  }
+  if (supportsAssignmentContentFiles(operation)) {
+    console.log('  --intro-file <path>  optional; reads the assignment description from a UTF-8 file');
+    console.log('  --activity-file <path>  optional; reads the assignment instructions from a UTF-8 file');
+  }
   console.log('  --format <string>  optional; one of: json');
   console.log('  --no-validate-response  optional; skip contract response validation');
   console.log('  --raw  optional; alias for --no-validate-response');
@@ -331,7 +447,9 @@ async function main() {
   }
 
   const summaryOptions = await prepareSummaryFileOptions(operation, options);
-  const prepared = prepareUploadFileOptions(operation, summaryOptions);
+  const contentOptions = await prepareContentFileOptions(operation, summaryOptions);
+  const assignmentContentOptions = await prepareAssignmentContentFileOptions(operation, contentOptions);
+  const prepared = prepareUploadFileOptions(operation, assignmentContentOptions);
   buildParameters(operation, prepared.options);
   const client = createMoodleRestClient({
     baseUrl: process.env.MOODLE_BASE_URL,

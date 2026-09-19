@@ -280,8 +280,97 @@ test('update-assignment help exposes authoring fields and editor uploads', async
   assert.equal(result.code, 0);
   assert.match(result.stdout, /--intro <string>/);
   assert.match(result.stdout, /--activity <string>/);
+  assert.match(result.stdout, /--intro-file <path>\s+optional; reads the assignment description from a UTF-8 file/);
+  assert.match(result.stdout, /--activity-file <path>\s+optional; reads the assignment instructions from a UTF-8 file/);
   assert.match(result.stdout, /--file-area <string>\s+optional; one of: intro, activity/);
   assert.match(result.stdout, /--upload-file <path>/);
+});
+
+test('update-assignment reads UTF-8 authoring content from Unicode paths', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia tarea con espacios á-'));
+  const introPath = path.join(directory, 'descripción ü.html');
+  const activityPath = path.join(directory, 'instrucciones ñ.html');
+  const intro = '<p>Descripción con tilde á</p>';
+  const activity = '<p>Instrucciones con eñe ñ</p>';
+  let requestBody = null;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    requestBody = Buffer.concat(chunks).toString('utf8');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ updated: true }));
+  });
+
+  try {
+    await writeFile(introPath, intro, 'utf8');
+    await writeFile(activityPath, activity, 'utf8');
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    const result = await runCli([
+      'update-assignment',
+      '--course-id', '2609',
+      '--module-id', '7710',
+      '--intro-file', introPath,
+      '--intro-format', 'html',
+      '--activity-file', activityPath,
+      '--activity-format', 'html',
+      '--no-validate-response'
+    ], {
+      env: {
+        MOODLE_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MOODLE_REST_TOKEN: 'test-token'
+      }
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    const parameters = new URLSearchParams(requestBody);
+    assert.equal(parameters.get('wsfunction'), 'local_moodlia_update_assignment');
+    assert.equal(parameters.get('intro'), intro);
+    assert.equal(parameters.get('activity'), activity);
+    assert.equal(parameters.has('intro_file'), false);
+    assert.equal(parameters.has('activity_file'), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('update-assignment rejects conflicting inline and file content', async () => {
+  for (const field of ['intro', 'activity']) {
+    const result = await runCli([
+      'update-assignment',
+      '--course-id', '2609',
+      '--module-id', '7710',
+      `--${field}`, '<p>Inline</p>',
+      `--${field}-file`, `${field}.html`
+    ]);
+
+    assert.equal(result.code, 1);
+    assert.match(
+      JSON.parse(result.stderr.trim()).message,
+      new RegExp(`Do not combine --${field} with --${field}-file`)
+    );
+  }
+});
+
+test('update-assignment reports missing local authoring files', async () => {
+  const missingPath = path.join(tmpdir(), 'contenido inexistente á', 'tarea ü.html');
+  const result = await runCli([
+    'update-assignment',
+    '--course-id', '2609',
+    '--module-id', '7710',
+    '--intro-file', missingPath
+  ]);
+
+  assert.equal(result.code, 1);
+  const error = JSON.parse(result.stderr.trim());
+  assert.equal(error.code, 'invalid_parameters');
+  assert.match(error.message, /Unable to read intro file/);
 });
 
 test('update-assignment accepts HTML content with one local editor file', async () => {
@@ -315,7 +404,42 @@ test('Book chapter commands expose local file uploads', async () => {
     const result = await runCli([command, '--help']);
     assert.equal(result.code, 0);
     assert.match(result.stdout, /--draft-item-id <integer>/);
+    assert.match(result.stdout, /--content-file <path>/);
     assert.match(result.stdout, /--upload-file <path>/);
+  }
+});
+
+test('Book chapter commands read UTF-8 content files and reject inline conflicts', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia capítulo contenido á-'));
+  const contentPath = path.join(directory, 'capítulo ü.html');
+
+  try {
+    await writeFile(contentPath, '<p>Contenido portátil ñ</p>', 'utf8');
+    const accepted = await runCli([
+      'create-book-chapter',
+      '--course-id', '42',
+      '--module-id', '202',
+      '--title', 'Chapter',
+      '--content-file', contentPath
+    ]);
+    assert.equal(accepted.code, 1);
+    assert.match(
+      JSON.parse(accepted.stderr.trim()).message,
+      /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
+    );
+
+    const rejected = await runCli([
+      'create-book-chapter',
+      '--course-id', '42',
+      '--module-id', '202',
+      '--title', 'Chapter',
+      '--content', '<p>Inline</p>',
+      '--content-file', contentPath
+    ]);
+    assert.equal(rejected.code, 1);
+    assert.match(JSON.parse(rejected.stderr.trim()).message, /Do not combine --content with --content-file/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
