@@ -8,10 +8,11 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.2 Transport Scope
 
-Version `0.2.6` keeps the package REST-only and adds UTF-8 `--intro-file` and
-`--activity-file` input for assignment authoring content, plus UTF-8
-`--content-file` input for content operations such as Book chapters. Version
-`0.2.5` added streamed editor-file uploads to Book chapter creation and updates.
+Version `0.2.7` keeps the package REST-only and adds identity-preserving File
+resource replacement through `update-resource --upload-file`. Version `0.2.6`
+added UTF-8 `--intro-file` and `--activity-file` input for assignment authoring
+content, plus UTF-8 `--content-file` input for content operations such as Book
+chapters. Version `0.2.5` added streamed editor-file uploads to Book chapter creation and updates.
 Version `0.2.4` added assignment name, description, activity-instruction, and
 editor-file updates. Version `0.2.3` added native section summary file uploads
 and UTF-8 `--summary-file` input.
@@ -121,6 +122,7 @@ Upload a local file without placing its base64 content on the command line:
 moodlia upload-folder-file --course-id 42 --module-id 105 --filename "notes.pdf" --upload-file "./notes.pdf"
 moodlia upload-course-backup --filename "course.mbz" --upload-file "./course.mbz"
 moodlia create-module --course-id 42 --section-number 1 --module-type resource --name "Notes" --upload-file "./notes.pdf"
+moodlia update-resource --course-id 42 --module-id 106 --upload-file "./replacement.pdf"
 moodlia update-section --course-id 42 --section-id 7 --summary-file "./section.html" --summary-format html --upload-file "./hero.jpg"
 moodlia update-assignment --course-id 42 --module-id 201 --intro '<p><img src="@@PLUGINFILE@@/brief.jpg" alt="Assignment brief"></p>' --intro-format html --upload-file "./brief.jpg" --file-area intro
 moodlia update-assignment --course-id 42 --module-id 201 --intro-file "./assignment description.html" --intro-format html --activity-file "./student instructions.html" --activity-format html
@@ -132,6 +134,10 @@ upload endpoint, then sends only the returned draft item id to the MoodlIA
 operation. This avoids Base64 expansion and does not impose a client-side size
 limit. Moodle, PHP, and the web server remain responsible for the effective
 upload limit. `--upload-reference` remains available for backward compatibility.
+
+`update-resource` replaces the stored file through Moodle's module update API
+while retaining the existing course-module and resource instance identifiers.
+It can also update `--name`, `--intro`, and `--intro-format` in the same call.
 
 `update-section --summary-file <path>` reads the section summary as UTF-8 and
 can be combined with one `--upload-file`. Use `@@PLUGINFILE@@/filename.ext` in
@@ -199,6 +205,11 @@ moodlia create-question --category-id 5 --context-id 77 --question-type truefals
 moodlia add-question-to-quiz --quiz-module-id 102 --question-id 999
 moodlia update-quiz-question-slot --quiz-module-id 102 --slot 1 --max-mark 1
 ```
+
+For `course_shared`, `create-question-category` can omit
+`--question-bank-module-id`; MoodlIA then reuses an existing shared bank or
+creates `MoodlIA Question Bank` automatically. Shared banks are Moodle `qbank`
+modules in section 0 and are included in native course backups.
 
 Work with assignments, forums, and grades:
 

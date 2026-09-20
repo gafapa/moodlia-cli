@@ -711,6 +711,99 @@ test('CLI upload commands expose the unlimited local file option', async () => {
   const resourceHelp = await runCli(['create-module', '--help']);
   assert.equal(resourceHelp.code, 0);
   assert.match(resourceHelp.stdout, /--upload-file <path>\s+optional for resource modules/);
+
+  const updateResourceHelp = await runCli(['update-resource', '--help']);
+  assert.equal(updateResourceHelp.code, 0);
+  assert.match(updateResourceHelp.stdout, /--upload-file <path>/);
+});
+
+test('CLI streams a replacement file and keeps resource identifiers in the response', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia-resource-update-'));
+  const filePath = path.join(directory, 'reemplazo con tilde á.pdf');
+  const content = Buffer.from('replacement PDF bytes');
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    const body = Buffer.concat(chunks);
+    requests.push({
+      url: request.url,
+      contentType: request.headers['content-type'] ?? '',
+      body
+    });
+
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/webservice/upload.php') {
+      response.end(JSON.stringify([{
+        itemid: 944,
+        filename: 'reemplazo con tilde á.pdf',
+        filepath: '/',
+        filesize: content.length
+      }]));
+      return;
+    }
+    response.end(JSON.stringify({
+      module_id: 106,
+      course_module_id: 106,
+      instance_id: 501,
+      name: 'Updated PDF',
+      files: [{
+        file_id: 701,
+        filename: 'reemplazo con tilde á.pdf',
+        url: 'https://moodle.test/pluginfile.php/replacement.pdf',
+        filepath: '/',
+        filesize: content.length,
+        mimetype: 'application/pdf',
+        time_modified: 1
+      }]
+    }));
+  });
+
+  try {
+    await writeFile(filePath, content);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    const result = await runCli([
+      'update-resource',
+      '--course-id', '42',
+      '--module-id', '106',
+      '--name', 'Updated PDF',
+      '--upload-file', filePath,
+      '--format', 'json'
+    ], {
+      env: {
+        MOODLE_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MOODLE_REST_TOKEN: 'secret-token'
+      }
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, '/webservice/upload.php');
+    assert.match(requests[0].contentType, /^multipart\/form-data; boundary=/);
+    assert.equal(requests[0].body.includes(content), true);
+
+    const parameters = new URLSearchParams(requests[1].body.toString('utf8'));
+    assert.equal(parameters.get('wsfunction'), 'local_moodlia_update_resource');
+    assert.equal(parameters.get('course_id'), '42');
+    assert.equal(parameters.get('module_id'), '106');
+    assert.equal(parameters.get('filename'), 'reemplazo con tilde á.pdf');
+    assert.equal(parameters.get('draft_item_id'), '944');
+    assert.equal(parameters.has('upload_reference'), false);
+
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.course_module_id, 106);
+    assert.equal(output.instance_id, 501);
+    assert.equal(output.files[0].filename, 'reemplazo con tilde á.pdf');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('CLI accepts a local file when creating a Moodle resource', async () => {
