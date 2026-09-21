@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createAdaptiveMoodleAdapter } from '../adaptive/index.mjs';
+import { createMoodliaMoodleAdapter } from '../adapters/moodlia/index.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -75,7 +76,7 @@ test('adaptive adapter routes binary sync work through the selected MoodlIA capa
     async downloadAsset(asset) { calls.push(['download', asset.filename]); return new Uint8Array([1]); },
     async stageModuleAssets() { calls.push(['stage']); return { draft_item_id: 2 }; },
     async replaceResourceAsset() { calls.push(['replace']); return { files: [] }; },
-    async publishBookChapterAsset() { calls.push(['book']); return { files: [] }; }
+    async publishBookChapterAssets() { calls.push(['book']); return { files: [] }; }
   };
   const adapter = createAdaptiveMoodleAdapter({ moodlia, profileName: 'school' });
   await adapter.discoverSite();
@@ -83,8 +84,56 @@ test('adaptive adapter routes binary sync work through the selected MoodlIA capa
   await adapter.downloadAsset({ filename: 'file.pdf' });
   await adapter.stageModuleAssets({}, [], { courseId: 1 });
   await adapter.replaceResourceAsset({}, new Uint8Array(), { courseId: 1 });
-  await adapter.publishBookChapterAsset({}, new Uint8Array(), { courseId: 1 });
+  await adapter.publishBookChapterAssets({}, [], { courseId: 1 });
   assert.deepEqual(calls, [['download', 'file.pdf'], ['stage'], ['replace'], ['book']]);
+});
+
+test('Book chapter assets share one draft and publish once', async () => {
+  const uploads = [];
+  const operations = [];
+  const client = {
+    async uploadDraftData(data, options) {
+      uploads.push({ data: [...data], options });
+      return {
+        draft_item_id: options.itemId || 41,
+        filename: options.filename,
+        filepath: options.filepath
+      };
+    },
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { files: uploads.map((upload) => ({ ...upload.options, filesize: upload.data.length })) };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const action = {
+    source_key: 'assets:chapter:3',
+    parent_source_key: 'chapter:3',
+    parent_module_source_key: 'module:2',
+    content: '<p>Portable</p>',
+    content_format: 1,
+    assets: [
+      { filename: 'hero.jpg', filepath: '/' },
+      { filename: 'flow.svg', filepath: '/diagrams/' }
+    ]
+  };
+  const createdEntities = new Map([
+    ['modules:module:2', { module_id: 20 }],
+    ['chapters:chapter:3', { chapter_id: 30 }]
+  ]);
+
+  await adapter.publishBookChapterAssets(action, [
+    { asset: action.assets[0], data: new Uint8Array([1, 2]) },
+    { asset: action.assets[1], data: new Uint8Array([3]) }
+  ], { courseId: 10, createdEntities });
+
+  assert.equal(uploads.length, 2);
+  assert.equal(uploads[0].options.itemId, 0);
+  assert.equal(uploads[1].options.itemId, 41);
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].name, 'update_book_chapter');
+  assert.equal(operations[0].parameters.draft_item_id, 41);
+  assert.equal(operations[0].parameters.filename, 'hero.jpg');
 });
 
 test('CLI documents adaptive capabilities and course sync', async () => {

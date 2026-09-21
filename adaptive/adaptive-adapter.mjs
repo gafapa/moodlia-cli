@@ -145,9 +145,9 @@ export class AdaptiveMoodleAdapter {
     return adapter.replaceResourceAsset(action, data, context);
   }
 
-  async publishBookChapterAsset(action, data, context) {
+  async publishBookChapterAssets(action, assetsWithData, context) {
     const adapter = await this.providerForCapability('book_asset_transfer', context, action.provider);
-    return adapter.publishBookChapterAsset(action, data, context);
+    return adapter.publishBookChapterAssets(action, assetsWithData, context);
   }
 }
 

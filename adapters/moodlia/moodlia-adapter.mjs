@@ -40,9 +40,9 @@ function parseObject(value) {
   }
 }
 
-function normalizeChapterContent(chapter) {
-  let content = String(chapter.content ?? '');
-  const files = (chapter.files ?? []).map((file) => ({
+function normalizeEditorContent(contentValue, rawFiles) {
+  let content = String(contentValue ?? '');
+  const files = (rawFiles ?? []).map((file) => ({
     filename: String(file.filename),
     filepath: String(file.filepath ?? '/'),
     filesize: Number(file.filesize ?? 0),
@@ -70,7 +70,11 @@ function normalizeChapterContent(chapter) {
       // Invalid asset URLs remain visible to planner verification instead of being fetched.
     }
   }
-  return { ...chapter, content, files };
+  return { content, files };
+}
+
+function normalizeChapterContent(chapter) {
+  return { ...chapter, ...normalizeEditorContent(chapter.content, chapter.files) };
 }
 
 async function hashChapterFiles(client, chapter) {
@@ -248,15 +252,18 @@ export class MoodliaMoodleAdapter {
         const activity = parseObject(extra.activity);
         module.authoring_completeness = 'complete';
         if (module.module_type === 'page') {
+          const normalized = normalizeEditorContent(activity.content, activity.files);
           module.authoring = {
             kind: 'page',
             settings: {
-              content: String(activity.content ?? ''),
+              content: normalized.content,
+              content_format: Number(activity.content_format ?? 1),
               print_intro: Boolean(activity.print_intro),
               print_last_modified: activity.print_last_modified === undefined
                 ? true
                 : Boolean(activity.print_last_modified)
-            }
+            },
+            files: await hashFiles(this.client, normalized.files)
           };
           return;
         }
@@ -490,6 +497,10 @@ export class MoodliaMoodleAdapter {
         available: this.hasDeclaredOperation('update_book_chapter') && bookWriteAllowed,
         supported_fields: ['filename', 'filepath', 'filesize', 'content_hash', 'content']
       },
+      page_content_update: {
+        available: this.hasDeclaredOperation('update_page') && activityWriteAllowed,
+        supported_fields: ['name', 'content', 'content_format', 'print_intro', 'print_last_modified']
+      },
       module_asset_stage: {
         available: activityWriteAllowed,
         supported_fields: ['filename', 'filepath', 'filesize', 'content_hash']
@@ -626,6 +637,26 @@ export class MoodliaMoodleAdapter {
         ...fields
       });
     }
+    if (action.kind === 'page_content.update') {
+      const formats = { 1: 'html', 2: 'plain', html: 'html', plain: 'plain' };
+      const fields = { ...action.fields };
+      if (fields.content_format !== undefined) fields.content_format = formats[fields.content_format];
+      if (action.fields.content_format !== undefined && !fields.content_format) {
+        throw new TypeError('Page content format cannot be represented by the destination operation.');
+      }
+      const staged = action.asset_stage_source_key
+        ? createdEntities.get(`drafts:${action.asset_stage_source_key}`)
+        : null;
+      return this.client.callOperation('update_page', {
+        course_id: courseId,
+        module_id: action.target_id,
+        ...fields,
+        ...(staged?.draft_item_id ? {
+          filename: staged.files[0].filename,
+          draft_item_id: staged.draft_item_id
+        } : {})
+      });
+    }
     if (action.kind === 'assignment_content.update') {
       const formats = { 1: 'html', 2: 'plain', html: 'html', plain: 'plain' };
       const fields = { ...action.fields };
@@ -696,7 +727,7 @@ export class MoodliaMoodleAdapter {
     });
   }
 
-  async publishBookChapterAsset(action, data, { courseId, createdEntities = new Map() }) {
+  async publishBookChapterAssets(action, assetsWithData, { courseId, createdEntities = new Map() }) {
     const createdModule = createdEntities.get(`modules:${action.parent_module_source_key}`);
     const createdChapter = createdEntities.get(`chapters:${action.parent_source_key}`);
     const moduleId = action.target_module_id ?? createdModule?.module_id;
@@ -704,18 +735,25 @@ export class MoodliaMoodleAdapter {
     if (!Number.isInteger(Number(moduleId)) || !Number.isInteger(Number(chapterId))) {
       throw new TypeError(`Cannot resolve the destination Book chapter for ${action.source_key}.`);
     }
-    const uploaded = await this.client.uploadDraftData(data, {
-      filename: action.asset.filename,
-      filepath: action.asset.filepath
-    });
+    let draftItemId = 0;
+    const uploadedFiles = [];
+    for (const { asset, data } of assetsWithData) {
+      const uploaded = await this.client.uploadDraftData(data, {
+        filename: asset.filename,
+        filepath: asset.filepath,
+        itemId: draftItemId
+      });
+      draftItemId = uploaded.draft_item_id;
+      uploadedFiles.push(uploaded);
+    }
     return this.client.callOperation('update_book_chapter', {
       course_id: courseId,
       module_id: Number(moduleId),
       chapter_id: Number(chapterId),
       content: action.content,
       content_format: action.content_format,
-      filename: uploaded.filename,
-      draft_item_id: uploaded.draft_item_id
+      filename: uploadedFiles[0]?.filename,
+      draft_item_id: draftItemId
     });
   }
 }
