@@ -254,7 +254,14 @@ test('MoodlIA export produces portable section and assignment editor manifests',
         intro_files: [introFile], activity: '', activity_format: 1, activity_files: [],
         submission_plugins: [], feedback_plugins: []
       }] };
-      if (name === 'get_assignment_grading_form') return { active_method: '', supported: false };
+      if (name === 'get_assignment_grading_form') return {
+        active_method: 'guide', supported: true, name: 'Guide', description: '', options_json: '{}',
+        criteria: [{
+          sort_order: 1, shortname: 'Accuracy', description: 'Accuracy',
+          description_markers: 'Marker guidance', max_score: 10
+        }],
+        comments: [{ sort_order: 1, description: 'Well supported' }]
+      };
       throw new Error(`Unexpected operation ${name}`);
     },
     async downloadFile(url) {
@@ -270,7 +277,42 @@ test('MoodlIA export produces portable section and assignment editor manifests',
   assert.equal(exported.sections[0].summary, '<img src="@@PLUGINFILE@@/section.jpg">');
   assert.equal(exported.sections[0].files[0].sha256.length, 64);
   assert.equal(exported.sections[0].modules[0].authoring.content.intro_files[0].sha256.length, 64);
+  assert.equal(exported.sections[0].modules[0].authoring.grading_definition.method, 'guide');
   assert.deepEqual(exported.assets.map((asset) => asset.owner.file_area), ['section', 'intro']);
+});
+
+test('assignment grading-definition actions use the canonical wrapped payloads', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { active_method: name };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const createdEntities = new Map([['modules:module:20', { module_id: 80 }]]);
+  await adapter.applySyncAction({
+    kind: 'assignment_rubric.set', parent_source_key: 'module:20', target_module_id: null,
+    fields: { name: 'Rubric', description: '', criteria: [{ description: 'Quality', levels: [] }], options: {} }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'assignment_checklist.set', parent_source_key: 'module:20', target_module_id: null,
+    fields: { name: 'Checklist', description: '', items: [{ description: 'Evidence', score: 5 }] }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'assignment_guide.set', parent_source_key: 'module:20', target_module_id: null,
+    fields: {
+      name: 'Guide', description: '', criteria: [{ shortname: 'Accuracy', max_score: 10 }],
+      comments: [{ description: 'Strong' }], options: {}
+    }
+  }, { courseId: 8, createdEntities });
+  assert.deepEqual(operations.map((entry) => entry.name), [
+    'set_assignment_rubric', 'set_assignment_checklist', 'set_assignment_marking_guide'
+  ]);
+  assert.ok(Array.isArray(operations[0].parameters.criteria.criteria));
+  assert.ok(Array.isArray(operations[1].parameters.items.items));
+  assert.ok(Array.isArray(operations[2].parameters.criteria.criteria));
+  assert.ok(Array.isArray(operations[2].parameters.comments.comments));
 });
 
 test('CLI documents adaptive capabilities and course sync', async () => {

@@ -161,6 +161,37 @@ async function assignmentAuthoring(client, assignment, gradingForm) {
       options: parseObject(gradingForm.options_json)
     }
     : null;
+  let gradingDefinition = null;
+  if (rubric) {
+    gradingDefinition = gradingForm.checklist_compatible ? {
+      method: 'checklist',
+      name: rubric.name,
+      description: rubric.description,
+      items: rubric.criteria.map((criterion) => ({
+        sort_order: criterion.sort_order,
+        description: criterion.description,
+        score: Math.max(...criterion.levels.map((level) => level.score), 0)
+      }))
+    } : { method: 'rubric', ...rubric };
+  } else if (gradingForm?.active_method === 'guide' && gradingForm.supported) {
+    gradingDefinition = {
+      method: 'guide',
+      name: String(gradingForm.name ?? ''),
+      description: String(gradingForm.description ?? ''),
+      criteria: (gradingForm.criteria ?? []).map((criterion) => ({
+        sort_order: Number(criterion.sort_order ?? 0),
+        shortname: String(criterion.shortname ?? ''),
+        description: String(criterion.description ?? ''),
+        description_markers: String(criterion.description_markers ?? ''),
+        max_score: Number(criterion.max_score ?? 0)
+      })),
+      comments: (gradingForm.comments ?? []).map((comment) => ({
+        sort_order: Number(comment.sort_order ?? 0),
+        description: String(comment.description ?? '')
+      })),
+      options: parseObject(gradingForm.options_json)
+    };
+  }
   const intro = normalizeEditorContent(assignment.intro, assignment.intro_files);
   const activity = normalizeEditorContent(assignment.activity, assignment.activity_files);
   return {
@@ -175,6 +206,7 @@ async function assignmentAuthoring(client, assignment, gradingForm) {
     },
     settings,
     rubric,
+    grading_definition: gradingDefinition,
     losses: [
       ...((assignment.submission_plugins ?? []).length > 0 ? ['submission_plugin_configuration_not_exported'] : []),
       ...((assignment.feedback_plugins ?? []).length > 0 ? ['feedback_plugin_configuration_not_exported'] : []),
@@ -571,6 +603,14 @@ export class MoodliaMoodleAdapter {
         available: this.hasDeclaredOperation('set_assignment_rubric') && gradingFormWriteAllowed,
         supported_fields: ['name', 'description', 'criteria', 'options']
       },
+      assignment_checklist_set: {
+        available: this.hasDeclaredOperation('set_assignment_checklist') && gradingFormWriteAllowed,
+        supported_fields: ['name', 'description', 'items']
+      },
+      assignment_guide_set: {
+        available: this.hasDeclaredOperation('set_assignment_marking_guide') && gradingFormWriteAllowed,
+        supported_fields: ['name', 'description', 'criteria', 'comments', 'options']
+      },
       workshop_form_set: {
         available: this.hasDeclaredOperation('set_workshop_grading_form') && workshopFormWriteAllowed,
         supported_fields: ['strategy', 'definition']
@@ -776,7 +816,27 @@ export class MoodliaMoodleAdapter {
       return this.client.callOperation('set_assignment_rubric', {
         course_id: courseId,
         module_id: Number(moduleId),
-        ...action.fields
+        ...action.fields,
+        criteria: { criteria: action.fields.criteria }
+      });
+    }
+    if (action.kind === 'assignment_checklist.set' || action.kind === 'assignment_guide.set') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      if (action.kind === 'assignment_checklist.set') {
+        return this.client.callOperation('set_assignment_checklist', {
+          course_id: courseId,
+          module_id: Number(moduleId),
+          ...action.fields,
+          items: { items: action.fields.items }
+        });
+      }
+      return this.client.callOperation('set_assignment_marking_guide', {
+        course_id: courseId,
+        module_id: Number(moduleId),
+        ...action.fields,
+        criteria: { criteria: action.fields.criteria },
+        comments: { comments: action.fields.comments ?? [] }
       });
     }
     if (action.kind === 'workshop_form.set') {
