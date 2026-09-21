@@ -40,6 +40,17 @@ function parseObject(value) {
   }
 }
 
+async function uploadMaterial(client, material, itemId = 0) {
+  const options = {
+    filename: material.asset.filename,
+    filepath: material.asset.filepath,
+    itemId
+  };
+  return material.filePath
+    ? client.uploadDraftFile(material.filePath, options)
+    : client.uploadDraftData(material.data, options);
+}
+
 function normalizeEditorContent(contentValue, rawFiles) {
   let content = String(contentValue ?? '');
   const files = (rawFiles ?? []).map((file) => ({
@@ -698,26 +709,26 @@ export class MoodliaMoodleAdapter {
     return this.client.downloadFile(asset.url, { maximumBytes: Math.max(asset.filesize, 1) });
   }
 
+  async downloadAssetToFile(asset, destinationPath) {
+    return this.client.downloadFileToPath(asset.url, destinationPath, {
+      maximumBytes: Math.max(asset.filesize, 1)
+    });
+  }
+
   async stageModuleAssets(action, assetsWithData) {
     let draftItemId = 0;
     const files = [];
-    for (const { asset, data } of assetsWithData) {
-      const uploaded = await this.client.uploadDraftData(data, {
-        filename: asset.filename,
-        filepath: asset.filepath,
-        itemId: draftItemId
-      });
+    for (const material of assetsWithData) {
+      const uploaded = await uploadMaterial(this.client, material, draftItemId);
       draftItemId = uploaded.draft_item_id;
       files.push(uploaded);
     }
     return { draft_item_id: draftItemId, files };
   }
 
-  async replaceResourceAsset(action, data, { courseId }) {
-    const uploaded = await this.client.uploadDraftData(data, {
-      filename: action.asset.filename,
-      filepath: action.asset.filepath
-    });
+  async replaceResourceAsset(action, material, { courseId }) {
+    const resolvedMaterial = material instanceof Uint8Array ? { data: material } : material;
+    const uploaded = await uploadMaterial(this.client, { asset: action.asset, ...resolvedMaterial });
     return this.client.callOperation('update_resource', {
       course_id: courseId,
       module_id: action.target_id,
@@ -737,12 +748,8 @@ export class MoodliaMoodleAdapter {
     }
     let draftItemId = 0;
     const uploadedFiles = [];
-    for (const { asset, data } of assetsWithData) {
-      const uploaded = await this.client.uploadDraftData(data, {
-        filename: asset.filename,
-        filepath: asset.filepath,
-        itemId: draftItemId
-      });
+    for (const material of assetsWithData) {
+      const uploaded = await uploadMaterial(this.client, material, draftItemId);
       draftItemId = uploaded.draft_item_id;
       uploadedFiles.push(uploaded);
     }

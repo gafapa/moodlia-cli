@@ -29,6 +29,7 @@ export interface MoodleTransport {
   uploadDraftFile?(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   uploadDraftData?(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
   downloadFile?(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
+  downloadFileToPath?(url: string, destinationPath: string, options?: { maximumBytes?: number }): Promise<StreamedDownloadResult>;
 }
 
 export interface RestTransportOptions {
@@ -69,6 +70,7 @@ export interface MoodleClientInstance {
   uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   uploadDraftData(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
   downloadFile(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
+  downloadFileToPath(url: string, destinationPath: string, options?: { maximumBytes?: number }): Promise<StreamedDownloadResult>;
   [operationName: string]: unknown;
 }
 
@@ -78,6 +80,7 @@ export class RestTransport implements MoodleTransport {
   uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   uploadDraftData(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
   downloadFile(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
+  downloadFileToPath(url: string, destinationPath: string, options?: { maximumBytes?: number }): Promise<StreamedDownloadResult>;
 }
 
 export class MoodleClient implements MoodleClientInstance {
@@ -90,6 +93,7 @@ export class MoodleClient implements MoodleClientInstance {
   callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
+  downloadFileToPath(url: string, destinationPath: string, options?: { maximumBytes?: number }): Promise<StreamedDownloadResult>;
   [operationName: string]: unknown;
 }
 
@@ -123,6 +127,11 @@ export interface DraftUploadResult {
 export interface DraftDataUploadOptions extends DraftUploadOptions {
   filename: string;
 }
+export interface StreamedDownloadResult {
+  path: string;
+  filesize: number;
+  sha256: string;
+}
 export function uploadFileToMoodleDraft(options: {
   baseUrl: string;
   token: string;
@@ -153,6 +162,15 @@ export function downloadFileFromMoodle(options: {
   fetchImplementation?: typeof fetch;
   allowInsecure?: boolean;
 }): Promise<Uint8Array>;
+export function downloadFileFromMoodleToPath(options: {
+  baseUrl: string;
+  token: string;
+  url: string;
+  destinationPath: string;
+  maximumBytes?: number;
+  fetchImplementation?: typeof fetch;
+  allowInsecure?: boolean;
+}): Promise<StreamedDownloadResult>;
 export function toRestFunctionName(contract: MoodleOperationContract, operationName: string): string;
 export function resolveMoodleUrl(
   baseUrl: string,

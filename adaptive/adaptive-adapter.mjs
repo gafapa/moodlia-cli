@@ -135,6 +135,13 @@ export class AdaptiveMoodleAdapter {
     return adapter.downloadAsset(asset);
   }
 
+  async downloadAssetToFile(asset, destinationPath) {
+    if (!this.discovery) await this.discoverSite();
+    const adapter = this.availableAdapter();
+    if (!adapter?.downloadAssetToFile) return null;
+    return adapter.downloadAssetToFile(asset, destinationPath);
+  }
+
   async stageModuleAssets(action, assetsWithData, context) {
     const adapter = await this.providerForCapability('module_asset_stage', context, action.provider);
     return adapter.stageModuleAssets(action, assetsWithData, context);

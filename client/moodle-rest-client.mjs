@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 export function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -278,6 +279,63 @@ export async function downloadFileFromMoodle({
     offset += chunk.byteLength;
   }
   return data;
+}
+
+export async function downloadFileFromMoodleToPath({
+  baseUrl,
+  token,
+  url,
+  destinationPath,
+  maximumBytes = 50 * 1024 * 1024,
+  fetchImplementation = globalThis.fetch,
+  allowInsecure = false
+} = {}) {
+  const base = normaliseMoodleBaseUrl(baseUrl, { allowInsecure });
+  const target = new URL(String(url), base);
+  if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
+    throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
+  }
+  if (typeof destinationPath !== 'string' || destinationPath.trim() === '') {
+    throw new MoodleClientError('invalid_parameters', 'A destination path is required for streamed downloads.');
+  }
+  target.searchParams.set('token', String(token));
+  const response = await fetchImplementation(target, { redirect: 'error' });
+  if (!response.ok) {
+    throw new MoodleClientError('transport_error', `Moodle file download failed with HTTP ${response.status}.`);
+  }
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
+  }
+  const resolvedPath = path.resolve(destinationPath);
+  let handle;
+  let size = 0;
+  const hash = createHash('sha256');
+  try {
+    handle = await fs.promises.open(resolvedPath, 'wx', 0o600);
+    const reader = response.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maximumBytes) {
+          await reader.cancel();
+          throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
+        }
+        hash.update(value);
+        await handle.write(value);
+      }
+    }
+    await handle.close();
+    handle = null;
+    return { path: resolvedPath, filesize: size, sha256: hash.digest('hex') };
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    await fs.promises.rm(resolvedPath, { force: true }).catch(() => {});
+    if (error instanceof MoodleClientError) throw error;
+    throw new MoodleClientError('transport_error', 'Unable to stream a Moodle asset to the protected cache.', {}, error);
+  }
 }
 
 export function toRestFunctionName(contract, operationName) {
@@ -700,6 +758,18 @@ export class RestTransport {
     });
   }
 
+  async downloadFileToPath(url, destinationPath, options = {}) {
+    return downloadFileFromMoodleToPath({
+      baseUrl: this.baseUrl,
+      token: this.token,
+      url,
+      destinationPath,
+      fetchImplementation: this.fetchImplementation,
+      allowInsecure: this.allowInsecure,
+      ...options
+    });
+  }
+
   async callFunction(functionName, parameters = {}) {
     const endpoint = resolveMoodleUrl(this.baseUrl, 'webservice/rest/server.php', {
       allowInsecure: this.allowInsecure
@@ -857,6 +927,13 @@ export class MoodleClient {
       throw new MoodleClientError('invalid_parameters', 'The configured transport does not support file downloads.');
     }
     return this.transport.downloadFile(url, options);
+  }
+
+  async downloadFileToPath(url, destinationPath, options = {}) {
+    if (typeof this.transport.downloadFileToPath !== 'function') {
+      throw new MoodleClientError('unsupported_operation', 'This transport does not support streamed file downloads.');
+    }
+    return this.transport.downloadFileToPath(url, destinationPath, options);
   }
 }
 

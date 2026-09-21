@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -189,6 +190,37 @@ test('sync asset transport restricts downloads and uploads in-memory data', asyn
     }
   });
   assert.equal(uploaded.draft_item_id, 91);
+});
+
+test('sync asset transport streams bytes to a protected cache path', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'moodlia-stream-'));
+  const destinationPath = path.join(directory, 'asset.bin');
+  const bytes = new TextEncoder().encode('streamed portable image');
+  try {
+    const result = await moodliaClient.downloadFileFromMoodleToPath({
+      baseUrl: 'https://moodle.example',
+      token: 'secret-token',
+      url: 'https://moodle.example/webservice/pluginfile.php/2/mod_page/content/0/image.png',
+      destinationPath,
+      maximumBytes: bytes.byteLength,
+      fetchImplementation: async () => new Response(bytes, {
+        status: 200,
+        headers: { 'content-length': String(bytes.byteLength) }
+      })
+    });
+    assert.deepEqual(await readFile(destinationPath), Buffer.from(bytes));
+    assert.equal(result.filesize, bytes.byteLength);
+    assert.equal(result.sha256, createHash('sha256').update(bytes).digest('hex'));
+    await assert.rejects(() => moodliaClient.downloadFileFromMoodleToPath({
+      baseUrl: 'https://moodle.example',
+      token: 'secret-token',
+      url: 'https://moodle.example/webservice/pluginfile.php/asset.png',
+      destinationPath,
+      fetchImplementation: async () => new Response(bytes)
+    }), /Unable to stream|exist/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('validates nested response shapes', () => {

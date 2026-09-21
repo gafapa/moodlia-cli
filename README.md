@@ -43,7 +43,7 @@ moodlia course sync `
   --plan-digest "sha256:..." --allow-write
 ```
 
-The preview covers verified course fields, hidden target creation, MoodlIA-backed sections, groups and grouping membership, portable Page/Label/URL creation, file resources and folders on creation, Books and chapter files, selected assignment content and new rubrics, and new Workshop grading forms. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
+The preview covers verified course fields, hidden target creation, MoodlIA-backed sections, groups and grouping membership, portable Page/Label/URL creation, identity-preserving Page updates with editor files, file resources and folders on creation, Books and multi-file chapters, selected assignment content and new rubrics, and new Workshop grading forms. Asset bytes are streamed through a protected temporary cache, hashed during download, uploaded to an owner-scoped draft, and removed after each action. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
 
 Durable jobs use the same SQLite state for inspection, history, cancellation, reconciliation-based resume, and live verification:
 
