@@ -4,8 +4,10 @@ import { loadProfiles, resolveProfile } from 'moodle-core-cli/profiles';
 import { contentDigest } from 'moodle-core-cli/sync';
 import {
   applyManualEnrolmentSync,
+  auditCourseCompletion,
   auditCourse,
   getCourseProgressReport,
+  planCourseCompletionRepair,
   planManualEnrolmentSync
 } from 'moodle-core-cli/workflows';
 import { createAdaptiveSiteAdapter } from '../adaptive/index.mjs';
@@ -71,6 +73,18 @@ export function printAdaptiveCourseProgressHelp() {
   console.log('  --user-ids <ids>            Core provider only; comma-separated Moodle user IDs');
 }
 
+export function printAdaptiveCourseCompletionAuditHelp() {
+  console.log('Usage: moodlia course completion audit --profile <name> --course-id <id> [options]');
+  console.log('Uses the typed MoodlIA audit when authorized and otherwise reports conservative Core evidence.');
+}
+
+export function printAdaptiveCourseCompletionRepairHelp() {
+  console.log('Usage: moodlia course completion repair --profile <name> --course-id <id> [options]');
+  console.log('  --mode <mode>               book_view_only, all_grade_to_view, or disable_all');
+  console.log('  --reset-completion-states   Reset affected state only when explicitly applying');
+  console.log('  --allow-write --yes         Apply through MoodlIA; otherwise produce a dry-run or Core gap plan');
+}
+
 export function printAdaptiveEnrolmentSyncHelp() {
   console.log('Usage: moodlia enrolments sync --profile <name> --course-id <id> --desired-file <path> [options]');
   console.log('Plans add-only manual enrolments. Core desired entries use role_id; MoodlIA entries use role_archetype.');
@@ -114,6 +128,58 @@ export async function runAdaptiveCourseProgress(options, contract) {
       maximumUsers: positiveInteger(options, 'maximum_users', 100)
     })
   };
+}
+
+export async function runAdaptiveCourseCompletionAudit(options, contract) {
+  const adapter = siteAdapter(options, contract);
+  await adapter.discoverSite();
+  const courseId = positiveInteger(options, 'course_id');
+  if (adapter.discovery.providers.moodlia?.available
+      && adapter.adapters.moodlia.hasDeclaredOperation('audit_course_completion')) {
+    return {
+      provider: 'moodlia',
+      data: await adapter.adapters.moodlia.client.callOperation('audit_course_completion', {
+        course_id: courseId,
+        include_ok: booleanOption(options, 'include_ok')
+      })
+    };
+  }
+  if (!adapter.discovery.providers.core?.available) {
+    throw new MoodleClientError('capability_gap', 'Neither MoodlIA completion audit nor the Core evidence workflow is available.');
+  }
+  return {
+    provider: 'core',
+    data: await auditCourseCompletion(adapter.adapters.core.client, { courseId })
+  };
+}
+
+export async function runAdaptiveCourseCompletionRepair(options, contract) {
+  const allowWrite = booleanOption(options, 'allow_write');
+  const confirmed = booleanOption(options, 'yes');
+  if (allowWrite && !confirmed) {
+    throw new MoodleClientError('permission_denied', 'Applying a completion repair requires --allow-write and --yes.');
+  }
+  const adapter = siteAdapter(options, contract, allowWrite);
+  await adapter.discoverSite();
+  const courseId = positiveInteger(options, 'course_id');
+  const mode = options.mode ?? 'book_view_only';
+  if (adapter.discovery.providers.moodlia?.available
+      && adapter.adapters.moodlia.hasDeclaredOperation('repair_course_completion')) {
+    return {
+      provider: 'moodlia',
+      data: await adapter.adapters.moodlia.client.callOperation('repair_course_completion', {
+        course_id: courseId,
+        mode,
+        dry_run: !allowWrite,
+        reset_completion_states: allowWrite && booleanOption(options, 'reset_completion_states')
+      })
+    };
+  }
+  if (!adapter.discovery.providers.core?.available) {
+    throw new MoodleClientError('capability_gap', 'No completion repair provider is available.');
+  }
+  const audit = await auditCourseCompletion(adapter.adapters.core.client, { courseId });
+  return { provider: 'core', data: planCourseCompletionRepair(audit, { mode }) };
 }
 
 async function planMoodliaEnrolments(client, courseId, desired) {

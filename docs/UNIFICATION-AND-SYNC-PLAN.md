@@ -1,6 +1,6 @@
 # Adaptive Moodle Clients and Cross-Site Synchronization
 
-Status: implementation in progress. P0-P2 and P4-P8 are implemented for the verified preview scope; the broader P3 workflow backlog is partially implemented, and the remaining P9/P10 release gates stay open.
+Status: implementation in progress. P0-P2 and P4-P8 are implemented for the verified preview scope. P3 now includes adaptive/Core audit, progress, completion and add-only enrolment workflows plus grouped lifecycle and explicit provider namespaces. P9 has the 100-scenario logical matrix and the supported-branch plugin matrix; disposable end-to-end source/target qualification and the final P10 release gate remain open.
 
 Date: 2026-09-21.
 
@@ -10,7 +10,7 @@ Canonical planning document: `moodlia-cli/docs/UNIFICATION-AND-SYNC-PLAN.md`.
 
 The shared Core-owned engine, adaptive MoodlIA client, persistent synchronization state, immutable planning, recovery, and separate MCP coordinator are implemented. The current verified preview includes course metadata and hidden course creation; sections; groups and groupings; portable Page, Label, URL, resource, folder, Book, assignment, Workshop, Database, Feedback, Quiz, Lesson, question-bank, completion, and selected gradebook configuration; owner-scoped assets; and internal-link rewriting. Core and adaptive CLIs also expose evidence-based course audit, progress reporting, and digest-bound add-only manual-enrolment workflows. Unsupported or lossy fields remain plan gaps and require an explicit registered degradation where one exists.
 
-The remaining release work is deliberately separate: broader cross-version source/target qualification, completion of the lower-priority P3 workflow backlog, coordinated npm publication, and any separately authorized plugin deployment. Clean tarball installation, the supported-branch plugin matrix, English documentation, and skill propagation have been verified. No production course synchronization is implied by this checkpoint.
+The remaining release work is deliberately separate: disposable end-to-end source/target qualification, lower-priority provider-specific workflow promotion where Moodle exposes a verified API, coordinated `0.3.1` publication, and any separately authorized plugin deployment. Clean tarball installation, the 100-scenario logical matrix, the supported-branch plugin matrix, English documentation, and skill propagation have been verified. No production course synchronization is implied by this checkpoint.
 
 ## 1. Outcome and scope
 
@@ -405,7 +405,7 @@ No copying of student submissions, grades earned, quiz attempts, historical comp
 
 ## 15. CLI and library experience
 
-All commands in this section are proposed additions.
+The commands below describe the implemented preview syntax. Existing flat operation commands remain supported.
 
 ```powershell
 # Inspect capability choices without a write.
@@ -427,7 +427,11 @@ moodle-core course sync --source-profile school_a --source-course-id 42 `
 # Inspect and resume journaled work.
 moodlia sync status --job-id example-job
 moodlia sync resume --job-id example-job --allow-write
-moodlia sync verify --binding-id example-binding
+moodlia sync verify --plan-id example-plan --job-id example-job
+
+# Select a provider contract explicitly without spawning another CLI.
+moodlia core get-course --profile school_a --course-id 42
+moodlia plugin get-course-details --course-id 42
 ```
 
 Keep `sync-course` as an alias for `course sync`. Introduce grouped workflow commands without removing existing kebab-case operation commands. Namespaces `moodlia core <command>` and `moodlia plugin <command>` provide explicit access when provider operations differ. Do not flatten colliding contracts into one indistinguishable command list.

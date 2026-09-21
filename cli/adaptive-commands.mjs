@@ -96,6 +96,11 @@ export function printAdaptiveCapabilitiesHelp() {
 export function printAdaptiveSyncHelp() {
   console.log('Usage: moodlia course sync [options]');
   console.log('       moodlia sync-course [options]');
+  console.log('       moodlia sync status --job-id <id>');
+  console.log('       moodlia sync resume --job-id <id> --plan-digest <sha256> --allow-write');
+  console.log('       moodlia sync verify --plan-id <id> [--job-id <id>]');
+  console.log('       moodlia sync history');
+  console.log('       moodlia sync cancel --job-id <id>');
   console.log('');
   console.log('Planning:');
   console.log('  --source-profile <name>     Source Moodle profile');
@@ -105,6 +110,7 @@ export function printAdaptiveSyncHelp() {
   console.log('  --create-target-category-id <id>  Create a hidden target course in this category');
   console.log('  --target-shortname <value>  Required short name for a newly created target course');
   console.log('  --plan [path]               Save an immutable plan');
+  console.log('  --plan-file <path>          Alias for --plan <path>');
   console.log('  --mapping <path>            Explicit section/group ID mapping JSON');
   console.log('  --unsupported-policy <mode> error, skip, or degrade');
   console.log('  --conflict-policy <mode>    abort, source-wins, target-wins, or report');
@@ -138,6 +144,10 @@ export async function runAdaptiveCapabilities(options, contract) {
 }
 
 export async function runAdaptiveCourseSync(options, contract) {
+  if (options.plan !== undefined && options.plan_file !== undefined) {
+    throw new MoodleClientError('invalid_parameters', 'Do not combine --plan with --plan-file.');
+  }
+  if (options.plan_file !== undefined) options = { ...options, plan: options.plan_file };
   const approving = options.approve_plan !== undefined;
   const applying = options.apply_plan !== undefined;
   const resuming = options.resume_job !== undefined;

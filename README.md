@@ -28,6 +28,15 @@ Inspect the evidence without exposing credentials:
 moodlia capabilities --profile school_a --course-id 42
 ```
 
+Use an explicit provider namespace when diagnostics or contract differences require it. Both paths execute in the same Node process; the Core namespace does not spawn another CLI:
+
+```powershell
+moodlia core get-course --profile school_a --course-id 42
+moodlia plugin get-course-details --course-id 42
+```
+
+`moodlia core` resolves the profile's Core credential. `moodlia plugin` retains the legacy `MOODLE_BASE_URL` and `MOODLE_REST_TOKEN` direct-command behavior.
+
 Create a read-only cross-site plan, without a Moodle backup:
 
 ```powershell
@@ -62,10 +71,14 @@ The adaptive CLI also exposes shared evidence workflows. It prefers the richer M
 ```powershell
 moodlia course audit --profile school_a --course-id 42
 moodlia course progress --profile school_a --course-id 42 --maximum-users 100
+moodlia course completion audit --profile school_a --course-id 42
+moodlia course completion repair --profile school_a --course-id 42 --mode book_view_only
 moodlia enrolments sync --profile school_a --course-id 42 --desired-file desired-enrolments.json --plan-file enrolments.plan.json
 ```
 
 Manual enrolment synchronization is add-only and digest-bound. Core plans use numeric `role_id` values; plugin-only MoodlIA plans use `role_archetype`. Existing enrolments are never removed by this workflow.
+
+Completion audit and repair are also adaptive. An authorized MoodlIA site provides the typed audit and dry-run repair, while a Core-only site returns the evidence it can read and an explicit capability-gap plan. A real repair requires both `--allow-write` and `--yes`; without them the MoodlIA path is dry-run only.
 
 The Moodle-hosted MCP remains a single-site operation surface. Cross-site MCP orchestration is provided separately by `moodlia-sync-mcp`; it consumes only externally approved plan digests.
 
@@ -77,7 +90,7 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.3 Adaptive Scope
 
-Version `0.3.0` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, and verified recovery. The CLI does not embed an MCP server.
+Version `0.3.1` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, verified recovery, and stable machine-readable exit codes. The CLI does not embed an MCP server.
 
 ## Version 0.2 Transport Scope
 
@@ -152,6 +165,19 @@ moodlia create-module --course-id 42 --section-number 1 --module-type page --nam
 ```
 
 All commands return JSON by default. Errors are written to stderr as JSON with `error`, `code`, `message`, and `details`.
+
+| Exit code | Meaning |
+| ---: | --- |
+| `0` | Success |
+| `1` | Unexpected internal error |
+| `2` | Invalid configuration, arguments, plan, or local state |
+| `3` | Unsupported capability or provider gap |
+| `4` | Synchronization conflict or failed precondition |
+| `5` | Remote Moodle, authentication, permission, or transport failure |
+| `6` | Partial execution or unknown write outcome |
+| `7` | Response or synchronization verification failure |
+
+Planning results with blocking conflicts or unsupported changes keep their structured JSON on stdout and use the corresponding non-zero code. This lets scripts react without scraping messages.
 
 Show all commands:
 

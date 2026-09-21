@@ -95,7 +95,7 @@ test('CLI recognises the course completion configuration command', async () => {
     '--required-course-grade-percent', '80'
   ]);
 
-  assert.equal(result.code, 1);
+  assert.equal(result.code, 2);
   const error = JSON.parse(result.stderr.trim());
   assert.equal(error.code, 'invalid_parameters');
   assert.match(error.message, /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/);
@@ -295,7 +295,7 @@ test('REST transport preserves Moodle business error details', async () => {
 
 test('CLI validates unknown options before requiring credentials', async () => {
   const result = await runCli(['get-courses', '--unknown', 'value']);
-  assert.equal(result.code, 1);
+  assert.equal(result.code, 2);
   const error = JSON.parse(result.stderr.trim());
   assert.equal(error.code, 'invalid_parameters');
   assert.match(error.message, /Unknown option/);
@@ -320,7 +320,7 @@ test('section commands accept HTML summaries from the shared contract', async ()
     '--summary', '<p>Updated summary</p>',
     '--summary-format', 'html'
   ]);
-  assert.equal(accepted.code, 1);
+  assert.equal(accepted.code, 2);
   assert.match(JSON.parse(accepted.stderr.trim()).message, /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/);
 
   const rejected = await runCli([
@@ -330,7 +330,7 @@ test('section commands accept HTML summaries from the shared contract', async ()
     '--summary', 'Summary',
     '--summary-format', 'markdown'
   ]);
-  assert.equal(rejected.code, 1);
+  assert.equal(rejected.code, 2);
   assert.match(JSON.parse(rejected.stderr.trim()).message, /summary_format must be one of: html, plain/);
 });
 
@@ -418,7 +418,7 @@ test('update-assignment rejects conflicting inline and file content', async () =
       `--${field}-file`, `${field}.html`
     ]);
 
-    assert.equal(result.code, 1);
+    assert.equal(result.code, 2);
     assert.match(
       JSON.parse(result.stderr.trim()).message,
       new RegExp(`Do not combine --${field} with --${field}-file`)
@@ -435,7 +435,7 @@ test('update-assignment reports missing local authoring files', async () => {
     '--intro-file', missingPath
   ]);
 
-  assert.equal(result.code, 1);
+  assert.equal(result.code, 2);
   const error = JSON.parse(result.stderr.trim());
   assert.equal(error.code, 'invalid_parameters');
   assert.match(error.message, /Unable to read intro file/);
@@ -457,7 +457,7 @@ test('update-assignment accepts HTML content with one local editor file', async 
       '--file-area', 'intro'
     ]);
 
-    assert.equal(result.code, 1);
+    assert.equal(result.code, 2);
     assert.match(
       JSON.parse(result.stderr.trim()).message,
       /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
@@ -507,7 +507,7 @@ test('Book chapter commands read UTF-8 content files and reject inline conflicts
       '--title', 'Chapter',
       '--content-file', contentPath
     ]);
-    assert.equal(accepted.code, 1);
+    assert.equal(accepted.code, 2);
     assert.match(
       JSON.parse(accepted.stderr.trim()).message,
       /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
@@ -521,7 +521,7 @@ test('Book chapter commands read UTF-8 content files and reject inline conflicts
       '--content', '<p>Inline</p>',
       '--content-file', contentPath
     ]);
-    assert.equal(rejected.code, 1);
+    assert.equal(rejected.code, 2);
     assert.match(JSON.parse(rejected.stderr.trim()).message, /Do not combine --content with --content-file/);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -754,7 +754,7 @@ test('update-section rejects missing upload files without exposing the token', a
     }
   });
 
-  assert.equal(result.code, 1);
+  assert.equal(result.code, 2);
   const error = JSON.parse(result.stderr.trim());
   assert.equal(error.code, 'invalid_parameters');
   assert.match(error.message, /Unable to read upload file/);
@@ -770,7 +770,7 @@ test('update-section rejects conflicting local and contract options', async () =
     '--upload-file', 'image.jpg',
     '--draft-item-id', '913'
   ]);
-  assert.equal(uploadConflict.code, 1);
+  assert.equal(uploadConflict.code, 2);
   assert.match(JSON.parse(uploadConflict.stderr.trim()).message, /Do not combine --upload-file/);
 
   const summaryConflict = await runCli([
@@ -780,7 +780,7 @@ test('update-section rejects conflicting local and contract options', async () =
     '--summary', '<p>Inline</p>',
     '--summary-file', 'section.html'
   ]);
-  assert.equal(summaryConflict.code, 1);
+  assert.equal(summaryConflict.code, 2);
   assert.match(JSON.parse(summaryConflict.stderr.trim()).message, /Do not combine --summary with --summary-file/);
 });
 
@@ -799,7 +799,7 @@ test('update-section allows an inline summary with one local upload file', async
       '--upload-file', imagePath
     ]);
 
-    assert.equal(result.code, 1);
+    assert.equal(result.code, 2);
     assert.match(
       JSON.parse(result.stderr.trim()).message,
       /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/
@@ -928,7 +928,7 @@ test('CLI accepts a local file when creating a Moodle resource', async () => {
       '--name', 'Resource',
       '--upload-file', filePath
     ]);
-    assert.equal(result.code, 1);
+    assert.equal(result.code, 2);
     const error = JSON.parse(result.stderr.trim());
     assert.equal(error.code, 'invalid_parameters');
     assert.match(error.message, /MOODLE_BASE_URL and MOODLE_REST_TOKEN are required/);

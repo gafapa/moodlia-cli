@@ -6,7 +6,12 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.13.0', '24']
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,7 +22,7 @@ jobs:
           path: moodle-core-cli
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
       - name: Install Core package dependencies
         working-directory: moodle-core-cli
         run: npm ci --ignore-scripts

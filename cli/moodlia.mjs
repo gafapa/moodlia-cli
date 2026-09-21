@@ -2,6 +2,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exitCodeForError, exitCodeForResult } from 'moodle-core-cli/exit-codes';
+import { runMoodleCoreCli } from 'moodle-core-cli/cli-runner';
+import { loadProfiles, resolveProfile } from 'moodle-core-cli/profiles';
 import {
   buildContractParameters,
   createMoodleRestClient,
@@ -18,9 +21,13 @@ import {
 } from './adaptive-commands.mjs';
 import {
   printAdaptiveCourseAuditHelp,
+  printAdaptiveCourseCompletionAuditHelp,
+  printAdaptiveCourseCompletionRepairHelp,
   printAdaptiveCourseProgressHelp,
   printAdaptiveEnrolmentSyncHelp,
   runAdaptiveCourseAudit,
+  runAdaptiveCourseCompletionAudit,
+  runAdaptiveCourseCompletionRepair,
   runAdaptiveCourseProgress,
   runAdaptiveEnrolmentSync
 } from './adaptive-workflow-commands.mjs';
@@ -385,9 +392,9 @@ function describeOption(definition) {
   return details.join('; ');
 }
 
-function printHelp(contract, operation = null) {
+function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
   if (!operation) {
-    console.log('Usage: moodlia <command> [options]');
+    console.log(`Usage: ${commandPrefix} <command> [options]`);
     console.log('');
     console.log('Commands:');
     console.log('  capabilities  Inspect adaptive Core and MoodlIA capabilities');
@@ -395,7 +402,13 @@ function printHelp(contract, operation = null) {
     console.log('  sync-course   Alias for course sync');
     console.log('  course audit  Evidence-based adaptive course audit');
     console.log('  course progress  Adaptive progress and grade report');
+    console.log('  course completion audit  Adaptive completion configuration audit');
+    console.log('  course completion repair Plan or apply a typed completion repair');
     console.log('  enrolments sync  Plan or apply add-only manual enrolments');
+    if (commandPrefix === 'moodlia') {
+      console.log('  core <command>    Run an explicit Moodle Core operation in-process');
+      console.log('  plugin <command>  Run an explicit MoodlIA plugin operation');
+    }
     for (const entry of contract.operations.filter((item) => item.transports.includes('cli'))) {
       console.log(`  ${toKebabCase(entry.name)}  ${entry.summary}`);
     }
@@ -405,10 +418,13 @@ function printHelp(contract, operation = null) {
     console.log('  --no-validate-response');
     console.log('  --raw  Alias for --no-validate-response');
     console.log('  --help');
+    console.log('');
+    console.log('Exit codes: 0 success, 1 internal, 2 validation, 3 capability gap, 4 conflict,');
+    console.log('            5 remote failure, 6 partial execution, 7 verification failure.');
     return;
   }
 
-  console.log(`Usage: moodlia ${toKebabCase(operation.name)} [options]`);
+  console.log(`Usage: ${commandPrefix} ${toKebabCase(operation.name)} [options]`);
   console.log('');
   console.log(operation.summary);
   console.log('');
@@ -435,16 +451,79 @@ function printHelp(contract, operation = null) {
   console.log('  --raw  optional; alias for --no-validate-response');
 }
 
+function takeNamespaceOption(argv, name) {
+  const longName = `--${name}`;
+  const remaining = [];
+  let value;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === longName) {
+      value = argv[index + 1];
+      index += 1;
+    } else if (argument.startsWith(`${longName}=`)) {
+      value = argument.slice(longName.length + 1);
+    } else {
+      remaining.push(argument);
+    }
+  }
+  return { value, remaining };
+}
+
+function hasCliOption(argv, name) {
+  const prefix = `--${name}`;
+  return argv.some((argument) => argument === prefix || argument.startsWith(`${prefix}=`));
+}
+
+function prepareCoreNamespaceArguments(rawArguments) {
+  const profileOption = takeNamespaceOption(rawArguments, 'profile');
+  const configOption = takeNamespaceOption(profileOption.remaining, 'config');
+  const argumentsForCore = [...configOption.remaining];
+  if (profileOption.value !== undefined) {
+    if (!profileOption.value || profileOption.value.startsWith('--')) {
+      throw new MoodleClientError('invalid_parameters', '--profile requires a profile name.');
+    }
+    const profile = resolveProfile(loadProfiles(configOption.value ?? '.moodle-profiles.json'), profileOption.value);
+    const credentials = profile.credentials.core;
+    if (!credentials) {
+      throw new MoodleClientError('provider_unavailable', `Profile ${profile.name} does not configure Core credentials.`);
+    }
+    if (!hasCliOption(argumentsForCore, 'url')) argumentsForCore.push('--url', profile.url);
+    if (!hasCliOption(argumentsForCore, 'token')) argumentsForCore.push('--token', credentials.token);
+    if (profile.allow_insecure && !hasCliOption(argumentsForCore, 'allow-insecure')) {
+      argumentsForCore.push('--allow-insecure');
+    }
+  } else if (!hasCliOption(argumentsForCore, 'token')
+      && !process.env.MOODLE_TOKEN
+      && process.env.MOODLE_REST_TOKEN) {
+    argumentsForCore.push('--token', process.env.MOODLE_REST_TOKEN);
+  }
+  return argumentsForCore;
+}
+
 async function main() {
   loadEnvFile(path.join(process.cwd(), '.env'));
   loadEnvFile(path.join(rootDirectory, '.env'));
 
+  const rawArguments = process.argv.slice(2);
+  if (rawArguments[0] === 'core') {
+    const coreArguments = rawArguments.length === 1 ? ['--help'] : rawArguments.slice(1);
+    await runMoodleCoreCli(prepareCoreNamespaceArguments(coreArguments));
+    return;
+  }
+
   const contract = loadContractFromFile(contractPath);
-  const { positional, options } = parseArguments(process.argv.slice(2));
-  const command = positional[0];
-  const syncCommand = (command === 'course' && positional[1] === 'sync') || command === 'sync-course';
+  const { positional, options } = parseArguments(rawArguments);
+  const pluginNamespace = positional[0] === 'plugin';
+  const command = pluginNamespace ? positional[1] : positional[0];
+  const syncSubcommand = command === 'sync' ? positional[1] : null;
+  const groupedSyncCommand = ['status', 'resume', 'verify', 'history', 'cancel'].includes(syncSubcommand);
+  const syncCommand = (command === 'course' && positional[1] === 'sync')
+    || command === 'sync-course'
+    || groupedSyncCommand;
   const auditCommand = (command === 'course' && positional[1] === 'audit') || command === 'audit-course';
   const progressCommand = (command === 'course' && positional[1] === 'progress') || command === 'course-progress';
+  const completionAuditCommand = command === 'course' && positional[1] === 'completion' && positional[2] === 'audit';
+  const completionRepairCommand = command === 'course' && positional[1] === 'completion' && positional[2] === 'repair';
   const enrolmentSyncCommand = (command === 'enrolments' && positional[1] === 'sync') || command === 'sync-enrolments';
 
   if (command === 'capabilities') {
@@ -454,6 +533,7 @@ async function main() {
     }
     const payload = await runAdaptiveCapabilities(options, contract);
     console.log(JSON.stringify(payload, null, 2));
+    process.exitCode = exitCodeForResult(payload);
     return;
   }
   if (syncCommand) {
@@ -461,14 +541,28 @@ async function main() {
       printAdaptiveSyncHelp();
       return;
     }
-    const payload = await runAdaptiveCourseSync(options, contract);
+    const groupedOptions = syncSubcommand === 'status'
+      ? { ...options, job_id: options.job_id }
+      : syncSubcommand === 'resume'
+        ? { ...options, resume_job: options.job_id }
+        : syncSubcommand === 'verify'
+          ? { ...options, verify_plan: options.plan_id ?? options.binding_id, verify_job_id: options.job_id }
+          : syncSubcommand === 'history'
+            ? { ...options, history: true }
+            : syncSubcommand === 'cancel'
+              ? { ...options, cancel_job: options.job_id }
+              : options;
+    const payload = await runAdaptiveCourseSync(groupedOptions, contract);
     console.log(JSON.stringify(payload, null, 2));
+    process.exitCode = exitCodeForResult(payload);
     return;
   }
-  if (auditCommand || progressCommand || enrolmentSyncCommand) {
+  if (auditCommand || progressCommand || completionAuditCommand || completionRepairCommand || enrolmentSyncCommand) {
     if (options.help) {
       if (auditCommand) printAdaptiveCourseAuditHelp();
       else if (progressCommand) printAdaptiveCourseProgressHelp();
+      else if (completionAuditCommand) printAdaptiveCourseCompletionAuditHelp();
+      else if (completionRepairCommand) printAdaptiveCourseCompletionRepairHelp();
       else printAdaptiveEnrolmentSyncHelp();
       return;
     }
@@ -476,8 +570,13 @@ async function main() {
       ? await runAdaptiveCourseAudit(options, contract)
       : progressCommand
         ? await runAdaptiveCourseProgress(options, contract)
-        : await runAdaptiveEnrolmentSync(options, contract);
+        : completionAuditCommand
+          ? await runAdaptiveCourseCompletionAudit(options, contract)
+          : completionRepairCommand
+            ? await runAdaptiveCourseCompletionRepair(options, contract)
+            : await runAdaptiveEnrolmentSync(options, contract);
     console.log(JSON.stringify(payload, null, 2));
+    process.exitCode = exitCodeForResult(payload);
     return;
   }
 
@@ -485,7 +584,7 @@ async function main() {
     const operation = command
       ? contract.operations.find((entry) => toKebabCase(entry.name) === command && entry.transports.includes('cli'))
       : null;
-    printHelp(contract, operation);
+    printHelp(contract, operation, pluginNamespace ? 'moodlia plugin' : 'moodlia');
     return;
   }
 
@@ -519,9 +618,10 @@ async function main() {
   const parameters = buildParameters(operation, resolvedOptions);
   const payload = await client.callOperation(operation.name, parameters);
   console.log(JSON.stringify(payload, null, 2));
+  process.exitCode = exitCodeForResult(payload);
 }
 
 main().catch((error) => {
   console.error(JSON.stringify(normalizeClientError(error).toJSON()));
-  process.exitCode = 1;
+  process.exitCode = exitCodeForError(error);
 });

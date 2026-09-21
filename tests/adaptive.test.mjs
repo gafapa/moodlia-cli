@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -710,9 +710,21 @@ test('CLI documents adaptive audit, progress, and add-only enrolment workflows',
   for (const command of [
     ['course', 'audit', '--help'],
     ['course', 'progress', '--help'],
+    ['course', 'completion', 'audit', '--help'],
+    ['course', 'completion', 'repair', '--help'],
     ['enrolments', 'sync', '--help']
   ]) {
     const result = await execFileAsync(process.execPath, [cli, ...command]);
     assert.match(result.stdout, /Usage: moodlia/);
   }
+});
+
+test('CLI documents grouped synchronization lifecycle aliases', () => {
+  const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, 'sync', 'status', '--help'], {
+    encoding: 'utf8'
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /sync resume --job-id/);
+  assert.match(result.stdout, /sync verify --plan-id/);
 });
