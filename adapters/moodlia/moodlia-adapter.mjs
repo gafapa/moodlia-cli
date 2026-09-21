@@ -601,7 +601,7 @@ export class MoodliaMoodleAdapter {
           ...settings,
           visible,
           ...(staged?.draft_item_id ? { draft_item_id: staged.draft_item_id } : {}),
-          ...(moduleType === 'resource' && staged?.files?.[0]?.filename
+          ...(['resource', 'page'].includes(moduleType) && staged?.files?.[0]?.filename
             ? { filename: staged.files[0].filename }
             : {})
         }

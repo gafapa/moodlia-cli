@@ -445,6 +445,14 @@ test('Book chapter commands expose local file uploads', async () => {
   }
 });
 
+test('Page updates expose UTF-8 content files and editor uploads', async () => {
+  const result = await runCli(['update-page', '--help']);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /--content-file <path>/);
+  assert.match(result.stdout, /--upload-file <path>/);
+  assert.match(result.stdout, /--content-format <string>/);
+});
+
 test('Book chapter commands read UTF-8 content files and reject inline conflicts', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'moodlia capítulo contenido á-'));
   const contentPath = path.join(directory, 'capítulo ü.html');
