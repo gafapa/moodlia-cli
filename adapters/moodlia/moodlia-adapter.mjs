@@ -416,7 +416,17 @@ export class MoodliaMoodleAdapter {
       sections,
       groups: groupsResult.value.groups ?? [],
       groupings: groupingsResult.value.groupings ?? [],
-      exclusions
+      exclusions,
+      unknowns: exclusions
+        .filter((entry) => entry.reason.endsWith('_read_unavailable'))
+        .map((entry) => ({ ...entry, field: 'authoring' })),
+      completeness: { inventory: 'complete', pagination: 'complete', authoring: 'selected' },
+      capabilityEvidence: {
+        provider: 'moodlia',
+        plugin_version: site.plugin_version,
+        declared_function_count: site.functions.length,
+        contract_operation_count: site.operations.length
+      }
     });
   }
 
