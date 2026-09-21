@@ -623,6 +623,76 @@ test('course completion actions resolve destination activity ids', async () => {
   assert.equal(operations[0].parameters.required_course_grade_percent, 80);
 });
 
+test('MoodlIA export normalizes portable root gradebook items', async () => {
+  const client = {
+    async callOperation(name) {
+      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_contents') return { sections: [{
+        section_id: 10, section_number: 0, name: 'General', summary: '', summary_files: [],
+        modules: [{ module_id: 20, instance_id: 30, module_type: 'page', name: 'Page', visible: true }]
+      }] };
+      if (name === 'get_groups') return { groups: [] };
+      if (name === 'get_groupings') return { groupings: [] };
+      if (name === 'get_course_assignments') return { assignments: [] };
+      if (name === 'get_course_completion_criteria') return { course_completion_enabled: false };
+      if (name === 'get_module_details') return { extra_json: JSON.stringify({ activity: {
+        content: '<p>Read.</p>', content_format: 1, files: []
+      } }) };
+      if (name === 'get_grade_categories') return { categories: [{ category_id: 100, total_item_id: 400 }] };
+      if (name === 'get_grade_items') return { items: [
+        { item_id: 400, item_type: 'course', category_id: 100 },
+        {
+          item_id: 401, item_type: 'manual', category_id: 100, name: 'Participation',
+          grade_min: 0, grade_max: 10, grade_pass: 5, hidden: false
+        },
+        {
+          item_id: 402, item_type: 'mod', category_id: 100, course_module_id: 20,
+          item_number: 0, name: 'Page', grade_min: 0, grade_max: 100, grade_pass: 80,
+          hidden: false, locked: false, weight: 0, weight_overridden: false
+        }
+      ] };
+      throw new Error(`Unexpected operation ${name}`);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://source.example', moodle_version: '5.3',
+    plugin_version: '0.1.211', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(7);
+  assert.equal(exported.gradebook.losses.length, 0);
+  assert.equal(exported.gradebook.items[0].kind, 'manual');
+  assert.equal(exported.gradebook.items[0].remote_item_id, 401);
+  assert.equal(exported.gradebook.items[1].module_source_key, 'module:20');
+});
+
+test('gradebook actions resolve newly created activity grade items', async () => {
+  const operations = [];
+  const adapter = createMoodliaMoodleAdapter({ client: {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      if (name === 'get_grade_items') return { items: [{ item_id: 700, course_module_id: 80, item_number: 0 }] };
+      return name === 'create_grade_item' ? { item_id: 701 } : { item_id: parameters.item_id };
+    }
+  } });
+  const createdEntities = new Map([['modules:module:20', { module_id: 80 }]]);
+  await adapter.applySyncAction({
+    kind: 'grade_item.create', fields: {
+      name: 'Participation', grade_min: 0, grade_max: 10, grade_pass: 5, hidden: false
+    }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'grade_item.update', source_key: 'grade-item:module:20:0',
+    module_source_key: 'module:20', item_number: 0, target_id: null,
+    fields: { grade_pass: 80, hidden: false, locked: false }
+  }, { courseId: 8, createdEntities });
+  assert.deepEqual(operations.map((entry) => entry.name), [
+    'create_grade_item', 'get_grade_items', 'update_grade_item'
+  ]);
+  assert.equal(operations[2].parameters.item_id, 700);
+  assert.equal(operations[2].parameters.grade_pass, 80);
+});
+
 test('CLI documents adaptive capabilities and course sync', async () => {
   const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
   const capabilities = await execFileAsync(process.execPath, [cli, 'capabilities', '--help']);

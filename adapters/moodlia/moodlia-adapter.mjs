@@ -388,7 +388,8 @@ export class MoodliaMoodleAdapter {
 
   async exportCourse(courseId) {
     const site = this.discovery ?? await this.discoverSite();
-    const [course, contents, groupsResult, groupingsResult, assignmentsResult, completionResult] = await Promise.all([
+    const [course, contents, groupsResult, groupingsResult, assignmentsResult, completionResult,
+      gradeItemsResult, gradeCategoriesResult] = await Promise.all([
       this.client.callOperation('get_course_details', { course_id: courseId }),
       this.client.callOperation('get_course_contents', { course_id: courseId }),
       this.client.callOperation('get_groups', { course_id: courseId }).then(
@@ -406,6 +407,14 @@ export class MoodliaMoodleAdapter {
       this.client.callOperation('get_course_completion_criteria', { course_id: courseId }).then(
         (value) => ({ value, error: null }),
         (error) => ({ value: null, error })
+      ),
+      this.client.callOperation('get_grade_items', { course_id: courseId }).then(
+        (value) => ({ value, error: null }),
+        (error) => ({ value: { items: [] }, error })
+      ),
+      this.client.callOperation('get_grade_categories', { course_id: courseId }).then(
+        (value) => ({ value, error: null }),
+        (error) => ({ value: { categories: [] }, error })
       )
     ]);
     const exclusions = [
@@ -416,6 +425,9 @@ export class MoodliaMoodleAdapter {
     if (groupingsResult.error) exclusions.push({ scope: 'groupings', reason: 'source_read_unavailable' });
     if (assignmentsResult.error) exclusions.push({ scope: 'assignments', reason: 'source_read_unavailable' });
     if (completionResult.error) exclusions.push({ scope: 'course_completion', reason: 'source_read_unavailable' });
+    if (gradeItemsResult.error || gradeCategoriesResult.error) {
+      exclusions.push({ scope: 'gradebook', reason: 'source_read_unavailable' });
+    }
     const assignmentsByModule = new Map((assignmentsResult.value.assignments ?? [])
       .map((assignment) => [Number(assignment.module_id), assignment]));
     const sections = structuredClone(contents.sections ?? []);
@@ -851,6 +863,52 @@ export class MoodliaMoodleAdapter {
         !modules.some((entry) => Number(entry.module_id) === Number(moduleId)))
         ? ['completion_activity_not_present_in_course_inventory'] : []
     } : null;
+    const gradeItems = gradeItemsResult.value.items ?? [];
+    const courseTotal = gradeItems.find((item) => item.item_type === 'course');
+    const rootCategory = (gradeCategoriesResult.value.categories ?? []).find((category) =>
+      Number(category.total_item_id) === Number(courseTotal?.item_id));
+    const gradebookLosses = [];
+    const portableGradeItems = [];
+    let manualIndex = 0;
+    for (const item of gradeItems) {
+      if (item.item_type === 'manual') {
+        manualIndex += 1;
+        if (!rootCategory || Number(item.category_id) !== Number(rootCategory.category_id)) {
+          gradebookLosses.push(`manual_grade_item_category_not_portable:${manualIndex}`);
+        }
+        if (Boolean(item.locked) || Boolean(item.weight_overridden)) {
+          gradebookLosses.push(`manual_grade_item_lock_or_weight_not_portable:${manualIndex}`);
+        }
+        portableGradeItems.push({
+          kind: 'manual', source_item_id: manualIndex, remote_item_id: Number(item.item_id),
+          name: String(item.name ?? ''),
+          grade_min: Number(item.grade_min ?? 0), grade_max: Number(item.grade_max ?? 100),
+          grade_pass: Number(item.grade_pass ?? 0), hidden: Boolean(item.hidden)
+        });
+      } else if (item.item_type === 'mod' && Number(item.course_module_id) > 0) {
+        const module = modules.find((entry) => Number(entry.module_id) === Number(item.course_module_id));
+        if (!module) {
+          gradebookLosses.push(`module_grade_item_activity_not_exported:${Number(item.course_module_id)}`);
+          continue;
+        }
+        if (!rootCategory || Number(item.category_id) !== Number(rootCategory.category_id)) {
+          gradebookLosses.push(`module_grade_item_category_not_portable:${Number(item.course_module_id)}`);
+        }
+        portableGradeItems.push({
+          kind: 'module', module_source_key: `module:${Number(module.module_id)}`,
+          remote_item_id: Number(item.item_id),
+          item_number: Number(item.item_number ?? 0), name: String(item.name ?? ''),
+          grade_min: Number(item.grade_min ?? 0), grade_max: Number(item.grade_max ?? 100),
+          grade_pass: Number(item.grade_pass ?? 0), hidden: Boolean(item.hidden),
+          locked: Boolean(item.locked), weight: Number(item.weight ?? 0),
+          weight_overridden: Boolean(item.weight_overridden)
+        });
+      }
+    }
+    const gradebook = gradeItemsResult.error || gradeCategoriesResult.error ? null : {
+      items: portableGradeItems,
+      losses: [...new Set(gradebookLosses)]
+    };
     return createCourseSyncModel({
       site,
       course,
@@ -858,6 +916,7 @@ export class MoodliaMoodleAdapter {
       groups: groupsResult.value.groups ?? [],
       groupings: groupingsResult.value.groupings ?? [],
       courseCompletion: completion,
+      gradebook,
       exclusions,
       unknowns: exclusions
         .filter((entry) => entry.reason.endsWith('_read_unavailable'))
@@ -910,6 +969,7 @@ export class MoodliaMoodleAdapter {
       && evidence.question_manage === true
       && activityWriteAllowed;
     const lessonWriteAllowed = evidence.lesson_manage === true && activityWriteAllowed;
+    const gradebookWriteAllowed = evidence.gradebook_manage === true;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -1050,6 +1110,16 @@ export class MoodliaMoodleAdapter {
         supported_fields: [
           'page_type', 'title', 'content', 'content_format', 'definition',
           'display_in_menu', 'horizontal'
+        ]
+      },
+      grade_item_create: {
+        available: this.hasDeclaredOperation('create_grade_item') && gradebookWriteAllowed,
+        supported_fields: ['name', 'grade_min', 'grade_max', 'grade_pass', 'hidden']
+      },
+      grade_item_update: {
+        available: this.hasDeclaredOperation('update_grade_item') && gradebookWriteAllowed,
+        supported_fields: [
+          'name', 'grade_min', 'grade_max', 'grade_pass', 'hidden', 'locked', 'weight'
         ]
       }
     };
@@ -1316,6 +1386,32 @@ export class MoodliaMoodleAdapter {
         required: action.fields.required,
         ...(dependency?.item_id ? { depend_item_id: Number(dependency.item_id) } : {}),
         depend_value: action.fields.depend_value
+      });
+    }
+    if (action.kind === 'grade_item.create') {
+      return this.client.callOperation('create_grade_item', {
+        course_id: courseId,
+        ...action.fields
+      });
+    }
+    if (action.kind === 'grade_item.update') {
+      let itemId = Number(action.target_id ?? 0);
+      if (itemId <= 0 && action.module_source_key) {
+        const createdModule = createdEntities.get(`modules:${action.module_source_key}`);
+        const moduleId = action.target_module_id ?? createdModule?.module_id;
+        const gradebook = await this.client.callOperation('get_grade_items', { course_id: courseId });
+        const item = (gradebook.items ?? []).find((entry) =>
+          Number(entry.course_module_id) === Number(moduleId)
+          && Number(entry.item_number ?? 0) === Number(action.item_number ?? 0));
+        itemId = Number(item?.item_id ?? 0);
+      }
+      if (!Number.isInteger(itemId) || itemId <= 0) {
+        throw new TypeError(`Cannot resolve destination grade item for ${action.source_key}.`);
+      }
+      return this.client.callOperation('update_grade_item', {
+        course_id: courseId,
+        item_id: itemId,
+        ...action.fields
       });
     }
     if (action.kind === 'course_completion.set') {
