@@ -57,6 +57,16 @@ moodlia course sync --resume-job JOB_ID --plan-digest "sha256:..." --allow-write
 moodlia course sync --verify-plan PLAN_ID --verify-job-id JOB_ID
 ```
 
+The adaptive CLI also exposes shared evidence workflows. It prefers the richer MoodlIA implementation when available and uses the Core composition otherwise:
+
+```powershell
+moodlia course audit --profile school_a --course-id 42
+moodlia course progress --profile school_a --course-id 42 --maximum-users 100
+moodlia enrolments sync --profile school_a --course-id 42 --desired-file desired-enrolments.json --plan-file enrolments.plan.json
+```
+
+Manual enrolment synchronization is add-only and digest-bound. Core plans use numeric `role_id` values; plugin-only MoodlIA plans use `role_archetype`. Existing enrolments are never removed by this workflow.
+
 The Moodle-hosted MCP remains a single-site operation surface. Cross-site MCP orchestration is provided separately by `moodlia-sync-mcp`; it consumes only externally approved plan digests.
 
 Command-line and Node client for MoodlIA Moodle automation over REST.

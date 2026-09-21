@@ -16,6 +16,14 @@ import {
   runAdaptiveCapabilities,
   runAdaptiveCourseSync
 } from './adaptive-commands.mjs';
+import {
+  printAdaptiveCourseAuditHelp,
+  printAdaptiveCourseProgressHelp,
+  printAdaptiveEnrolmentSyncHelp,
+  runAdaptiveCourseAudit,
+  runAdaptiveCourseProgress,
+  runAdaptiveEnrolmentSync
+} from './adaptive-workflow-commands.mjs';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const contractPath = path.join(rootDirectory, 'contract', 'operations.json');
@@ -385,6 +393,9 @@ function printHelp(contract, operation = null) {
     console.log('  capabilities  Inspect adaptive Core and MoodlIA capabilities');
     console.log('  course sync   Plan or apply cross-site course synchronization');
     console.log('  sync-course   Alias for course sync');
+    console.log('  course audit  Evidence-based adaptive course audit');
+    console.log('  course progress  Adaptive progress and grade report');
+    console.log('  enrolments sync  Plan or apply add-only manual enrolments');
     for (const entry of contract.operations.filter((item) => item.transports.includes('cli'))) {
       console.log(`  ${toKebabCase(entry.name)}  ${entry.summary}`);
     }
@@ -432,6 +443,9 @@ async function main() {
   const { positional, options } = parseArguments(process.argv.slice(2));
   const command = positional[0];
   const syncCommand = (command === 'course' && positional[1] === 'sync') || command === 'sync-course';
+  const auditCommand = (command === 'course' && positional[1] === 'audit') || command === 'audit-course';
+  const progressCommand = (command === 'course' && positional[1] === 'progress') || command === 'course-progress';
+  const enrolmentSyncCommand = (command === 'enrolments' && positional[1] === 'sync') || command === 'sync-enrolments';
 
   if (command === 'capabilities') {
     if (options.help) {
@@ -448,6 +462,21 @@ async function main() {
       return;
     }
     const payload = await runAdaptiveCourseSync(options, contract);
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  if (auditCommand || progressCommand || enrolmentSyncCommand) {
+    if (options.help) {
+      if (auditCommand) printAdaptiveCourseAuditHelp();
+      else if (progressCommand) printAdaptiveCourseProgressHelp();
+      else printAdaptiveEnrolmentSyncHelp();
+      return;
+    }
+    const payload = auditCommand
+      ? await runAdaptiveCourseAudit(options, contract)
+      : progressCommand
+        ? await runAdaptiveCourseProgress(options, contract)
+        : await runAdaptiveEnrolmentSync(options, contract);
     console.log(JSON.stringify(payload, null, 2));
     return;
   }

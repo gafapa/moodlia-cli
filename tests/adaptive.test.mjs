@@ -704,3 +704,15 @@ test('CLI documents adaptive capabilities and course sync', async () => {
     assert.match(sync.stdout, new RegExp(option));
   }
 });
+
+test('CLI documents adaptive audit, progress, and add-only enrolment workflows', async () => {
+  const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
+  for (const command of [
+    ['course', 'audit', '--help'],
+    ['course', 'progress', '--help'],
+    ['enrolments', 'sync', '--help']
+  ]) {
+    const result = await execFileAsync(process.execPath, [cli, ...command]);
+    assert.match(result.stdout, /Usage: moodlia/);
+  }
+});
