@@ -63,7 +63,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.13"
   },
   "dependencies": {
     "moodle-core-cli": "^0.3.0"

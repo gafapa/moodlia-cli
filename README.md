@@ -83,7 +83,7 @@ continue through the independent Moodle-hosted endpoint.
 
 ## Requirements
 
-- Node.js 22 or newer.
+- Node.js 22.13 or newer.
 - Moodle 4.5 or later. Direct MoodlIA commands require the local plugin; adaptive operations can use exact Core services when it is absent.
 - A limited Moodle Core or MoodlIA REST token for each configured site.
 
