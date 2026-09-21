@@ -1,10 +1,16 @@
 # Adaptive Moodle Clients and Cross-Site Synchronization
 
-Status: proposed implementation plan; no runtime changes implemented by this document.
+Status: implementation in progress. P0-P8 are implemented for the verified preview scope; P9 qualification and P10 release remain open.
 
 Date: 2026-09-21.
 
 Canonical planning document: `moodlia-cli/docs/UNIFICATION-AND-SYNC-PLAN.md`.
+
+### Implementation checkpoint
+
+The shared Core-owned engine, adaptive MoodlIA client, persistent synchronization state, immutable planning, recovery, and separate MCP coordinator are implemented. The current verified preview includes course metadata and hidden course creation; sections; groups and groupings; portable Page, Label, URL, resource, folder, Book, assignment, Workshop, Database, Feedback, Quiz, Lesson, question-bank, completion, and selected gradebook configuration; owner-scoped assets; and internal-link rewriting. Unsupported or lossy fields remain plan gaps and require an explicit registered degradation where one exists.
+
+The remaining release work is deliberately separate: disposable cross-version qualification for Moodle 4.5 through 5.3, published-package installation tests, final documentation and skill propagation, coordinated npm publication, and any separately authorized plugin deployment. No production course synchronization is implied by this checkpoint.
 
 ## 1. Outcome and scope
 
