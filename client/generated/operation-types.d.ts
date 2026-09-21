@@ -3148,6 +3148,18 @@ export interface GetLessonPagesResponse {
     jumps: number[];
     files_count: number;
     files_size_total: number;
+    branches_count: number;
+    branches: {
+      answer_id: number;
+      title: string;
+      title_format: number;
+      response: string;
+      response_format: number;
+      jump_to: number;
+      score: number;
+    }[];
+    page_type: string;
+    definition_json: string;
   }[];
   warnings: {
     item: string;
@@ -3192,6 +3204,8 @@ export interface CreateLessonPageResponse {
       jump_to: number;
       score: number;
     }[];
+    page_type: string;
+    definition_json: string;
   };
 }
 
@@ -3230,6 +3244,8 @@ export interface UpdateLessonPageResponse {
       jump_to: number;
       score: number;
     }[];
+    page_type: string;
+    definition_json: string;
   };
 }
 

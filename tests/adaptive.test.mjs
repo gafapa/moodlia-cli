@@ -449,6 +449,71 @@ test('Quiz definition actions resolve imported questions without source Moodle i
   assert.equal(operations[2].parameters.max_mark, 2);
 });
 
+test('MoodlIA export normalizes portable Lesson definitions', async () => {
+  const client = {
+    async callOperation(name) {
+      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_contents') return { sections: [{
+        section_id: 10, section_number: 0, name: 'General', summary: '', summary_files: [],
+        modules: [{ module_id: 20, instance_id: 30, module_type: 'lesson', name: 'Lesson', visible: true }]
+      }] };
+      if (name === 'get_groups') return { groups: [] };
+      if (name === 'get_groupings') return { groupings: [] };
+      if (name === 'get_course_assignments') return { assignments: [] };
+      if (name === 'get_course_completion_criteria') return { course_completion_enabled: false };
+      if (name === 'get_module_details') return { extra_json: JSON.stringify({ activity: {
+        max_answers: 4, grade: 100, retakes_allowed: true, completion_end_reached: true
+      } }) };
+      if (name === 'get_lesson_pages') return { pages: [{
+        page_id: 500, page_type: 'content', title: 'Start', content: '<p>Choose.</p>',
+        content_format: 1, display_in_menu_block: true, layout: 0, files_count: 0,
+        definition_json: JSON.stringify({ branches: [{ title: 'Next', jump_to: -1, score: 0 }] })
+      }] };
+      throw new Error(`Unexpected operation ${name}`);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://source.example', moodle_version: '5.3',
+    plugin_version: '0.1.211', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(7);
+  const lesson = exported.sections[0].modules[0];
+  assert.equal(lesson.authoring_completeness, 'complete');
+  assert.equal(lesson.authoring.pages[0].source_page_id, 1);
+  assert.equal(lesson.authoring.pages[0].definition.branches[0].jump_to, -1);
+});
+
+test('Lesson page actions resolve module and previous-page identities', async () => {
+  const operations = [];
+  const adapter = createMoodliaMoodleAdapter({ client: {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { page_id: 701 };
+    }
+  } });
+  await adapter.applySyncAction({
+    kind: 'lesson_page.create', parent_source_key: 'module:20',
+    after_source_key: 'lesson-page:module:20:1',
+    fields: {
+      page_type: 'content', title: 'Second', content: '<p>Continue.</p>', content_format: 1,
+      definition: { branches: [{ title: 'Finish', jump_to: -9, score: 0 }] },
+      display_in_menu: true, horizontal: false
+    }
+  }, {
+    courseId: 8,
+    createdEntities: new Map([
+      ['modules:module:20', { module_id: 80 }],
+      ['lesson_pages:lesson-page:module:20:1', { page_id: 700 }]
+    ])
+  });
+  assert.equal(operations[0].name, 'create_lesson_page');
+  assert.equal(operations[0].parameters.module_id, 80);
+  assert.equal(operations[0].parameters.after_page_id, 700);
+  assert.deepEqual(operations[0].parameters.branches, [{ title: 'Finish', jump_to: -9, score: 0 }]);
+  assert.equal(operations[0].parameters.answers, undefined);
+});
+
 test('MoodlIA export normalizes Database fields and Feedback item dependencies', async () => {
   const client = {
     async callOperation(name, parameters = {}) {

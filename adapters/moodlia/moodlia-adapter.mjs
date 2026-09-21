@@ -428,7 +428,7 @@ export class MoodliaMoodleAdapter {
       section.files = await hashFiles(this.client, normalized.files);
     }));
     await Promise.all(sections.flatMap((section) => (section.modules ?? []).map(async (module) => {
-      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank', 'data', 'feedback', 'quiz']
+      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank', 'data', 'feedback', 'quiz', 'lesson']
         .includes(module.module_type)) return;
       try {
         if (module.module_type === 'assign') {
@@ -469,6 +469,86 @@ export class MoodliaMoodleAdapter {
         const extra = parseObject(details.extra_json);
         const activity = parseObject(extra.activity);
         module.authoring_completeness = 'complete';
+        if (module.module_type === 'lesson') {
+          const pages = await this.client.callOperation('get_lesson_pages', {
+            course_id: courseId,
+            module_id: module.module_id
+          });
+          const pageIds = new Map((pages.pages ?? []).map((page, index) => [Number(page.page_id), index + 1]));
+          const normalizedPages = (pages.pages ?? []).map((page, index) => {
+            const definition = parseObject(page.definition_json);
+            const normalizeJumps = (value) => {
+              if (Array.isArray(value)) return value.map(normalizeJumps);
+              if (value && typeof value === 'object') {
+                return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+                  key,
+                  ['jump_to', 'correct_jump_to', 'wrong_jump_to'].includes(key) && Number(item) > 0
+                    ? { source_page_id: pageIds.get(Number(item)) ?? null }
+                    : normalizeJumps(item)
+                ]));
+              }
+              return value;
+            };
+            return {
+              source_page_id: index + 1,
+              page_type: String(page.page_type ?? 'unsupported'),
+              title: String(page.title ?? ''),
+              content: String(page.content ?? ''),
+              content_format: Number(page.content_format ?? 1),
+              display_in_menu: Boolean(page.display_in_menu_block),
+              horizontal: Boolean(page.layout),
+              definition: normalizeJumps(definition),
+              files_count: Number(page.files_count ?? 0)
+            };
+          });
+          const losses = [
+            ...(Boolean(activity.use_password) ? ['lesson_password_not_exported'] : []),
+            ...(Number(activity.activity_link ?? 0) > 0 ? ['lesson_activity_link_requires_mapping'] : []),
+            ...(normalizedPages.some((page) => page.page_type === 'unsupported')
+              ? ['unsupported_lesson_page_type'] : []),
+            ...(normalizedPages.some((page) => JSON.stringify(page.definition).includes('"source_page_id":null'))
+              ? ['lesson_jump_target_not_exported'] : [])
+          ];
+          module.authoring_completeness = losses.some((loss) =>
+            ['unsupported_lesson_page_type', 'lesson_jump_target_not_exported'].includes(loss))
+            ? 'selected' : 'complete';
+          module.authoring = {
+            kind: 'lesson',
+            settings: {
+              intro: String(activity.intro ?? ''),
+              practice: Boolean(activity.practice),
+              allow_review: Boolean(activity.allow_review),
+              ongoing_score: Boolean(activity.ongoing_score),
+              progress_bar: Boolean(activity.progress_bar),
+              display_left_menu: Boolean(activity.display_left_menu),
+              display_left_if: Number(activity.display_left_if ?? 0),
+              slideshow: Boolean(activity.slideshow),
+              max_answers: Number(activity.max_answers ?? 4),
+              default_feedback: activity.default_feedback === undefined ? true : Boolean(activity.default_feedback),
+              available_from: Number(activity.available_from ?? 0),
+              deadline: Number(activity.deadline ?? 0),
+              time_limit_seconds: Number(activity.time_limit_seconds ?? 0),
+              allow_question_retry: Boolean(activity.allow_question_retry),
+              max_attempts: Number(activity.max_attempts ?? 5),
+              after_correct_answer: ({ 0: 'normal', 1: 'unseen_page', 2: 'unanswered_page' })[
+                Number(activity.after_correct_answer ?? 0)
+              ] ?? 'normal',
+              pages_to_show: Number(activity.pages_to_show ?? 0),
+              grade: Number(activity.grade ?? 100),
+              custom_scoring: Boolean(activity.custom_scoring),
+              retakes_allowed: activity.retakes_allowed === undefined ? true : Boolean(activity.retakes_allowed),
+              use_max_grade: Boolean(activity.use_max_grade),
+              minimum_questions: Number(activity.minimum_questions ?? 0),
+              completion_end_reached: activity.completion_end_reached === undefined
+                ? true : Boolean(activity.completion_end_reached),
+              completion_time_spent_seconds: Number(activity.completion_time_spent_seconds ?? 0),
+              allow_offline_attempts: Boolean(activity.allow_offline_attempts)
+            },
+            pages: normalizedPages,
+            losses
+          };
+          return;
+        }
         if (module.module_type === 'quiz') {
           const [exported, quizQuestions] = await Promise.all([
             this.client.callOperation('export_question_bank_blueprint', {
@@ -829,6 +909,7 @@ export class MoodliaMoodleAdapter {
     const quizWriteAllowed = evidence.quiz_manage === true
       && evidence.question_manage === true
       && activityWriteAllowed;
+    const lessonWriteAllowed = evidence.lesson_manage === true && activityWriteAllowed;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -963,6 +1044,13 @@ export class MoodliaMoodleAdapter {
       quiz_slot_update: {
         available: this.hasDeclaredOperation('update_quiz_question_slot') && quizWriteAllowed,
         supported_fields: ['slot', 'max_mark']
+      },
+      lesson_page_create: {
+        available: this.hasDeclaredOperation('create_lesson_page') && lessonWriteAllowed,
+        supported_fields: [
+          'page_type', 'title', 'content', 'content_format', 'definition',
+          'display_in_menu', 'horizontal'
+        ]
       }
     };
   }
@@ -1282,6 +1370,28 @@ export class MoodliaMoodleAdapter {
         quiz_module_id: Number(moduleId),
         slot: action.fields.slot,
         max_mark: action.fields.max_mark
+      });
+    }
+    if (action.kind === 'lesson_page.create') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      const previousPage = action.after_source_key
+        ? createdEntities.get(`lesson_pages:${action.after_source_key}`)
+        : null;
+      const definition = action.fields.definition ?? {};
+      return this.client.callOperation('create_lesson_page', {
+        course_id: courseId,
+        module_id: Number(moduleId),
+        title: action.fields.title,
+        content: action.fields.content,
+        content_format: action.fields.content_format,
+        page_type: action.fields.page_type,
+        ...(action.fields.page_type === 'content'
+          ? { branches: definition.branches ?? [] }
+          : { answers: definition.answers ?? {} }),
+        ...(previousPage?.page_id ? { after_page_id: Number(previousPage.page_id) } : {}),
+        display_in_menu: action.fields.display_in_menu,
+        horizontal: action.fields.horizontal
       });
     }
     if (action.kind === 'question_bank.import') {
