@@ -136,6 +136,44 @@ test('Book chapter assets share one draft and publish once', async () => {
   assert.equal(operations[0].parameters.filename, 'hero.jpg');
 });
 
+test('Label and URL sync actions reuse one staged editor draft', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { module_id: parameters.module_id };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const createdEntities = new Map([['drafts:draft:module:20', {
+    draft_item_id: 77,
+    files: [{ filename: 'hero image.jpg', filepath: '/' }]
+  }]]);
+
+  await adapter.applySyncAction({
+    kind: 'label_content.update',
+    target_id: 40,
+    asset_stage_source_key: 'draft:module:20',
+    fields: { content: '<img src="@@PLUGINFILE@@/hero%20image.jpg">', content_format: 1 }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'url_content.update',
+    target_id: 41,
+    fields: {
+      name: 'Reference', external_url: 'https://example.org', intro: '<p>Reference</p>',
+      intro_format: 'html', display: 'popup', popup_width: 720, popup_height: 480
+    }
+  }, { courseId: 8, createdEntities });
+
+  assert.equal(operations[0].name, 'update_label');
+  assert.equal(operations[0].parameters.draft_item_id, 77);
+  assert.equal(operations[0].parameters.filename, 'hero image.jpg');
+  assert.equal(operations[0].parameters.content_format, 'html');
+  assert.equal(operations[1].name, 'update_url');
+  assert.equal(operations[1].parameters.display, 6);
+  assert.equal(operations[1].parameters.intro_format, 'html');
+});
+
 test('CLI documents adaptive capabilities and course sync', async () => {
   const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
   const capabilities = await execFileAsync(process.execPath, [cli, 'capabilities', '--help']);

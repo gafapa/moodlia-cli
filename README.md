@@ -4,6 +4,8 @@
 
 MoodlIA 0.3 adds an adaptive path alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
 
+Typed Page, Text and media, and URL updates preserve the destination course-module identity. Their native editor files can be staged as one Moodle draft and synchronized with portable `@@PLUGINFILE@@` references.
+
 ```json
 {
   "schema_version": 1,

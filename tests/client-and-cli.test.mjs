@@ -485,6 +485,15 @@ test('Page updates expose UTF-8 content files and editor uploads', async () => {
   assert.match(result.stdout, /--content-format <string>/);
 });
 
+test('Text and media and URL updates expose typed content and upload options', async () => {
+  const labelHelp = await runCli(['update-label', '--help']);
+  assert.match(labelHelp.stdout, /--content-file <path>/);
+  assert.match(labelHelp.stdout, /--upload-file <path>/);
+  const urlHelp = await runCli(['update-url', '--help']);
+  assert.match(urlHelp.stdout, /--external-url <string>/);
+  assert.match(urlHelp.stdout, /--upload-file <path>/);
+});
+
 test('Book chapter commands read UTF-8 content files and reject inline conflicts', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'moodlia capítulo contenido á-'));
   const contentPath = path.join(directory, 'capítulo ü.html');

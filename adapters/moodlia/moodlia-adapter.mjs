@@ -279,20 +279,32 @@ export class MoodliaMoodleAdapter {
           return;
         }
         if (module.module_type === 'label') {
-          module.authoring = { kind: 'label', settings: { content: String(activity.content ?? '') } };
+          const normalized = normalizeEditorContent(activity.content, activity.files);
+          module.authoring = {
+            kind: 'label',
+            settings: {
+              content: normalized.content,
+              content_format: Number(activity.content_format ?? 1)
+            },
+            files: await hashFiles(this.client, normalized.files)
+          };
           return;
         }
         if (module.module_type === 'url') {
           const displayNames = { 0: 'auto', 1: 'embed', 3: 'new', 5: 'open', 6: 'popup' };
+          const normalized = normalizeEditorContent(activity.intro, activity.files);
           module.authoring = {
             kind: 'url',
             settings: {
               external_url: String(activity.external_url ?? ''),
+              intro: normalized.content,
+              intro_format: Number(activity.intro_format ?? 1),
               ...(displayNames[activity.display] ? { display: displayNames[activity.display] } : {}),
               print_intro: Boolean(activity.print_intro),
               ...(activity.popup_width ? { popup_width: Number(activity.popup_width) } : {}),
               ...(activity.popup_height ? { popup_height: Number(activity.popup_height) } : {})
-            }
+            },
+            files: await hashFiles(this.client, normalized.files)
           };
           return;
         }
@@ -522,6 +534,15 @@ export class MoodliaMoodleAdapter {
         available: this.hasDeclaredOperation('update_page') && activityWriteAllowed,
         supported_fields: ['name', 'content', 'content_format', 'print_intro', 'print_last_modified']
       },
+      label_content_update: {
+        available: this.hasDeclaredOperation('update_label') && activityWriteAllowed,
+        supported_fields: ['content', 'content_format']
+      },
+      url_content_update: {
+        available: this.hasDeclaredOperation('update_url') && activityWriteAllowed,
+        supported_fields: ['name', 'external_url', 'intro', 'intro_format', 'display', 'print_intro', 'popup_width',
+          'popup_height']
+      },
       module_asset_stage: {
         available: activityWriteAllowed,
         supported_fields: ['filename', 'filepath', 'filesize', 'content_hash']
@@ -622,7 +643,7 @@ export class MoodliaMoodleAdapter {
           ...settings,
           visible,
           ...(staged?.draft_item_id ? { draft_item_id: staged.draft_item_id } : {}),
-          ...(['resource', 'page'].includes(moduleType) && staged?.files?.[0]?.filename
+          ...(['resource', 'page', 'label', 'url'].includes(moduleType) && staged?.files?.[0]?.filename
             ? { filename: staged.files[0].filename }
             : {})
         }
@@ -669,6 +690,32 @@ export class MoodliaMoodleAdapter {
         ? createdEntities.get(`drafts:${action.asset_stage_source_key}`)
         : null;
       return this.client.callOperation('update_page', {
+        course_id: courseId,
+        module_id: action.target_id,
+        ...fields,
+        ...(staged?.draft_item_id ? {
+          filename: staged.files[0].filename,
+          draft_item_id: staged.draft_item_id
+        } : {})
+      });
+    }
+    if (action.kind === 'label_content.update' || action.kind === 'url_content.update') {
+      const operation = action.kind === 'label_content.update' ? 'update_label' : 'update_url';
+      const formatField = action.kind === 'label_content.update' ? 'content_format' : 'intro_format';
+      const formats = { 1: 'html', 2: 'plain', html: 'html', plain: 'plain' };
+      const fields = { ...action.fields };
+      if (fields[formatField] !== undefined) fields[formatField] = formats[fields[formatField]];
+      if (action.fields[formatField] !== undefined && !fields[formatField]) {
+        throw new TypeError(`${action.kind} format cannot be represented by the destination operation.`);
+      }
+      if (action.kind === 'url_content.update' && typeof fields.display === 'string') {
+        const displays = { auto: 0, embed: 1, new: 3, open: 5, popup: 6 };
+        fields.display = displays[fields.display];
+      }
+      const staged = action.asset_stage_source_key
+        ? createdEntities.get(`drafts:${action.asset_stage_source_key}`)
+        : null;
+      return this.client.callOperation(operation, {
         course_id: courseId,
         module_id: action.target_id,
         ...fields,
