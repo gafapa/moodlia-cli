@@ -10,6 +10,12 @@ import {
   MoodleClientError,
   normalizeClientError
 } from '../client/moodle-rest-client.mjs';
+import {
+  printAdaptiveCapabilitiesHelp,
+  printAdaptiveSyncHelp,
+  runAdaptiveCapabilities,
+  runAdaptiveCourseSync
+} from './adaptive-commands.mjs';
 
 const rootDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const contractPath = path.join(rootDirectory, 'contract', 'operations.json');
@@ -376,6 +382,9 @@ function printHelp(contract, operation = null) {
     console.log('Usage: moodlia <command> [options]');
     console.log('');
     console.log('Commands:');
+    console.log('  capabilities  Inspect adaptive Core and MoodlIA capabilities');
+    console.log('  course sync   Plan or apply cross-site course synchronization');
+    console.log('  sync-course   Alias for course sync');
     for (const entry of contract.operations.filter((item) => item.transports.includes('cli'))) {
       console.log(`  ${toKebabCase(entry.name)}  ${entry.summary}`);
     }
@@ -422,6 +431,26 @@ async function main() {
   const contract = loadContractFromFile(contractPath);
   const { positional, options } = parseArguments(process.argv.slice(2));
   const command = positional[0];
+  const syncCommand = (command === 'course' && positional[1] === 'sync') || command === 'sync-course';
+
+  if (command === 'capabilities') {
+    if (options.help) {
+      printAdaptiveCapabilitiesHelp();
+      return;
+    }
+    const payload = await runAdaptiveCapabilities(options, contract);
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  if (syncCommand) {
+    if (options.help) {
+      printAdaptiveSyncHelp();
+      return;
+    }
+    const payload = await runAdaptiveCourseSync(options, contract);
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
 
   if (!command || options.help) {
     const operation = command

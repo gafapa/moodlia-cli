@@ -155,6 +155,42 @@ test('streams local files to Moodle draft storage with multipart form data', asy
   }
 });
 
+test('sync asset transport restricts downloads and uploads in-memory data', async () => {
+  const bytes = new TextEncoder().encode('portable image');
+  let requestedUrl = '';
+  const downloaded = await moodliaClient.downloadFileFromMoodle({
+    baseUrl: 'https://moodle.example/learning',
+    token: 'secret-token',
+    url: 'https://moodle.example/learning/webservice/pluginfile.php/2/mod_book/chapter/3/image.png',
+    maximumBytes: bytes.byteLength,
+    fetchImplementation: async (url) => {
+      requestedUrl = String(url);
+      return new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength) } });
+    }
+  });
+  assert.deepEqual(downloaded, bytes);
+  assert.match(requestedUrl, /token=secret-token/);
+  await assert.rejects(() => moodliaClient.downloadFileFromMoodle({
+    baseUrl: 'https://moodle.example',
+    token: 'secret-token',
+    url: 'https://attacker.example/webservice/pluginfile.php/asset.png'
+  }), /configured Moodle/);
+
+  const uploaded = await moodliaClient.uploadDataToMoodleDraft({
+    baseUrl: 'https://moodle.example',
+    token: 'secret-token',
+    data: bytes,
+    filename: 'image.png',
+    fetchImplementation: async (url, options) => {
+      assert.equal(new URL(url).pathname, '/webservice/upload.php');
+      assert.equal(options.body.get('token'), 'secret-token');
+      assert.equal(options.body.get('file_1').size, bytes.byteLength);
+      return Response.json([{ itemid: 91, filename: 'image.png', filepath: '/', filesize: bytes.byteLength }]);
+    }
+  });
+  assert.equal(uploaded.draft_item_id, 91);
+});
+
 test('validates nested response shapes', () => {
   const operation = {
     name: 'get_example',
@@ -482,6 +518,16 @@ test('create-book-chapter uploads a Unicode path and passes the draft item id', 
       previous_chapter_id: 0,
       next_chapter_id: 0,
       url: 'https://moodle.test/mod/book/view.php?id=105&chapterid=301',
+      files: [{
+        file_id: 510,
+        filename: 'imagen héroe ü.jpg',
+        url: 'https://moodle.test/webservice/pluginfile.php/image.jpg',
+        filepath: '/',
+        filesize: image.length,
+        mimetype: 'image/jpeg',
+        content_hash: '0123456789abcdef0123456789abcdef01234567',
+        time_modified: 1
+      }],
       uploaded_files: [{
         file_id: 510,
         filename: 'imagen héroe ü.jpg',
@@ -756,6 +802,7 @@ test('CLI streams a replacement file and keeps resource identifiers in the respo
         filepath: '/',
         filesize: content.length,
         mimetype: 'application/pdf',
+        content_hash: '0123456789abcdef0123456789abcdef01234567',
         time_modified: 1
       }]
     }));

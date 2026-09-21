@@ -1,10 +1,71 @@
 # MoodlIA CLI
 
+## Adaptive Moodle profiles and synchronization
+
+MoodlIA 0.3 adds an adaptive path alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
+
+```json
+{
+  "schema_version": 1,
+  "profiles": {
+    "school_a": {
+      "url": "https://a.example.edu",
+      "backend": "auto",
+      "credentials": {
+        "core": { "token_env": "SCHOOL_A_CORE_TOKEN" },
+        "moodlia": { "token_env": "SCHOOL_A_MOODLIA_TOKEN" }
+      }
+    }
+  }
+}
+```
+
+Inspect the evidence without exposing credentials:
+
+```powershell
+moodlia capabilities --profile school_a --course-id 42
+```
+
+Create a read-only cross-site plan, without a Moodle backup:
+
+```powershell
+moodlia course sync `
+  --source-profile school_a --source-course-id 42 `
+  --target-profile school_b --target-course-id 81 `
+  --plan ".moodle-sync\plans\course-42.json"
+```
+
+Apply only the exact reviewed plan:
+
+```powershell
+moodlia course sync `
+  --apply-plan ".moodle-sync\plans\course-42.json" `
+  --plan-digest "sha256:..." --allow-write
+```
+
+The preview covers verified course fields, hidden target creation, MoodlIA-backed sections, groups and grouping membership, portable Page/Label/URL creation, file resources and folders on creation, Books and chapter files, selected assignment content and new rubrics, and new Workshop grading forms. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
+
+Durable jobs use the same SQLite state for inspection, history, cancellation, reconciliation-based resume, and live verification:
+
+```powershell
+moodlia course sync --job-id JOB_ID
+moodlia course sync --history
+moodlia course sync --cancel-job JOB_ID
+moodlia course sync --resume-job JOB_ID --plan-digest "sha256:..." --allow-write
+moodlia course sync --verify-plan PLAN_ID --verify-job-id JOB_ID
+```
+
+The Moodle-hosted MCP remains a single-site operation surface. Cross-site MCP orchestration is provided separately by `moodlia-sync-mcp`; it consumes only externally approved plan digests.
+
 Command-line and Node client for MoodlIA Moodle automation over REST.
 
 This package contains the public Node CLI, the reusable REST client, generated TypeScript declarations, and the canonical command contract needed by external users. MCP integrations remain a separate server-side surface and are not bundled into the CLI package. This package does not include server-side Moodle plugin files, deployment scripts, tests, or browser automation.
 
 The package is intentionally small: install the Moodle plugin on the server first, then use this package from developer machines, CI jobs, or automation workers.
+
+## Version 0.3 Adaptive Scope
+
+Version `0.3.0` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, and verified recovery. The CLI does not embed an MCP server.
 
 ## Version 0.2 Transport Scope
 
@@ -23,8 +84,8 @@ continue through the independent Moodle-hosted endpoint.
 ## Requirements
 
 - Node.js 22 or newer.
-- A Moodle site with the MoodlIA local plugin installed.
-- A Moodle REST token enabled for the MoodlIA web service.
+- Moodle 4.5 or later. Direct MoodlIA commands require the local plugin; adaptive operations can use exact Core services when it is absent.
+- A limited Moodle Core or MoodlIA REST token for each configured site.
 
 ## Installation
 
@@ -101,7 +162,7 @@ moodlia create-question --category-id 12 --context-id 34 --question-type multich
 
 ## Capabilities
 
-The package currently exposes 244 CLI commands generated from the shared operation contract:
+The package currently exposes 247 CLI commands generated from the shared operation contract:
 
 - Course and category management: 22 commands.
 - Calendar, enrolments, groups, and completion: 27 commands.
@@ -111,6 +172,8 @@ The package currently exposes 244 CLI commands generated from the shared operati
 - Question banks and quiz workflows: 34 commands.
 - Moodle plugin inventory and state: 5 commands.
 - Other utility operations: 34 commands.
+
+The three additional synchronization support reads expose contextual capability evidence, portable Workshop grading forms, and their associated authoring metadata. Use the generated help as the authoritative count and schema.
 
 Run `moodlia --help` for the exact command list. The bundled `contract/operations.json` file contains parameter schemas, return schemas, command names, and enum values.
 

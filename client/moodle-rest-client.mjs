@@ -182,6 +182,104 @@ export async function uploadFileToMoodleDraft({
   }
 }
 
+export async function uploadDataToMoodleDraft({
+  baseUrl,
+  token,
+  data,
+  filename,
+  filepath = '/',
+  itemId = 0,
+  timeoutMs = 0,
+  fetchImplementation = globalThis.fetch,
+  allowInsecure = false
+} = {}) {
+  if (!baseUrl || !token || !(data instanceof Uint8Array)) {
+    throw new MoodleClientError('invalid_parameters', 'A Moodle URL, token, and Uint8Array are required.');
+  }
+  const resolvedFilename = String(filename ?? '').trim();
+  if (!resolvedFilename || path.basename(resolvedFilename) !== resolvedFilename) {
+    throw new MoodleClientError('invalid_parameters', 'filename must be a plain file name.');
+  }
+  const resolvedFilepath = String(filepath || '/');
+  if (!resolvedFilepath.startsWith('/') || !resolvedFilepath.endsWith('/') || resolvedFilepath.includes('..')) {
+    throw new MoodleClientError('invalid_parameters', 'filepath must be an absolute Moodle file path.');
+  }
+  const endpoint = resolveMoodleUrl(baseUrl, 'webservice/upload.php', { allowInsecure });
+  const body = new FormData();
+  body.set('token', String(token));
+  body.set('filepath', resolvedFilepath);
+  body.set('itemid', String(itemId));
+  body.set('file_1', new Blob([data]), resolvedFilename);
+  const controller = new AbortController();
+  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetchImplementation(endpoint, {
+      method: 'POST', body, redirect: 'error', signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.exception || payload?.errorcode) {
+      throw new MoodleClientError('file_upload_failed', payload?.message ?? `Upload failed with HTTP ${response.status}.`);
+    }
+    const uploaded = Array.isArray(payload) ? payload[0] : null;
+    if (!uploaded || uploaded.error || Number(uploaded.itemid) <= 0) {
+      throw new MoodleClientError('file_upload_failed', uploaded?.error ?? 'Moodle did not return a draft item id.');
+    }
+    return {
+      draft_item_id: Number(uploaded.itemid),
+      filename: String(uploaded.filename ?? resolvedFilename),
+      filepath: String(uploaded.filepath ?? resolvedFilepath),
+      filesize: Number(uploaded.filesize ?? uploaded.size ?? data.byteLength)
+    };
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+export async function downloadFileFromMoodle({
+  baseUrl,
+  token,
+  url,
+  maximumBytes = 50 * 1024 * 1024,
+  fetchImplementation = globalThis.fetch,
+  allowInsecure = false
+} = {}) {
+  const base = normaliseMoodleBaseUrl(baseUrl, { allowInsecure });
+  const target = new URL(String(url), base);
+  if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
+    throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
+  }
+  target.searchParams.set('token', String(token));
+  const response = await fetchImplementation(target, { redirect: 'error' });
+  if (!response.ok) {
+    throw new MoodleClientError('transport_error', `Moodle file download failed with HTTP ${response.status}.`);
+  }
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maximumBytes) {
+      await reader.cancel();
+      throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
+    }
+    chunks.push(value);
+  }
+  const data = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return data;
+}
+
 export function toRestFunctionName(contract, operationName) {
   return `${contract.restPrefix}_${operationName}`;
 }
@@ -579,6 +677,29 @@ export class RestTransport {
     });
   }
 
+  async uploadDraftData(data, options = {}) {
+    return uploadDataToMoodleDraft({
+      baseUrl: this.baseUrl,
+      token: this.token,
+      data,
+      timeoutMs: this.uploadTimeoutMs,
+      fetchImplementation: this.fetchImplementation,
+      allowInsecure: this.allowInsecure,
+      ...options
+    });
+  }
+
+  async downloadFile(url, options = {}) {
+    return downloadFileFromMoodle({
+      baseUrl: this.baseUrl,
+      token: this.token,
+      url,
+      fetchImplementation: this.fetchImplementation,
+      allowInsecure: this.allowInsecure,
+      ...options
+    });
+  }
+
   async callFunction(functionName, parameters = {}) {
     const endpoint = resolveMoodleUrl(this.baseUrl, 'webservice/rest/server.php', {
       allowInsecure: this.allowInsecure
@@ -722,6 +843,20 @@ export class MoodleClient {
       );
     }
     return this.transport.uploadDraftFile(filePath, options);
+  }
+
+  async uploadDraftData(data, options = {}) {
+    if (typeof this.transport.uploadDraftData !== 'function') {
+      throw new MoodleClientError('invalid_parameters', 'The configured transport does not support data uploads.');
+    }
+    return this.transport.uploadDraftData(data, options);
+  }
+
+  async downloadFile(url, options = {}) {
+    if (typeof this.transport.downloadFile !== 'function') {
+      throw new MoodleClientError('invalid_parameters', 'The configured transport does not support file downloads.');
+    }
+    return this.transport.downloadFile(url, options);
   }
 }
 

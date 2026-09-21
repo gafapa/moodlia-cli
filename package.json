@@ -1,6 +1,6 @@
 {
   "name": "moodlia",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "description": "Command-line and Node client for MoodlIA Moodle automation over REST.",
   "type": "module",
   "license": "GPL-3.0-or-later",
@@ -24,11 +24,26 @@
       "types": "./client/moodle-rest-client.d.ts",
       "import": "./client/moodle-rest-client.mjs"
     },
-    "./contract": "./contract/operations.json"
+    "./contract": "./contract/operations.json",
+    "./adaptive": {
+      "types": "./adaptive/index.d.ts",
+      "import": "./adaptive/index.mjs"
+    },
+    "./adapters/moodlia": {
+      "types": "./adapters/moodlia/index.d.ts",
+      "import": "./adapters/moodlia/index.mjs"
+    },
+    "./sync": {
+      "types": "./sync/index.d.ts",
+      "import": "./sync/index.mjs"
+    }
   },
   "files": [
     "cli/",
     "client/",
+    "adaptive/",
+    "adapters/",
+    "sync/",
     "contract/",
     "LICENSE",
     "README.md"
@@ -48,7 +63,10 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "moodle-core-cli": "^0.3.0"
   },
   "publishConfig": {
     "access": "public",
