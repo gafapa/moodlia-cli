@@ -174,6 +174,105 @@ test('Label and URL sync actions reuse one staged editor draft', async () => {
   assert.equal(operations[1].parameters.intro_format, 'html');
 });
 
+test('section and assignment sync actions publish staged editor drafts', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return name === 'update_section' ? { section_id: parameters.section_id } : { module_id: parameters.module_id };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const createdEntities = new Map([
+    ['sections:section:10', { section_id: 90, section_number: 1 }],
+    ['modules:module:20', { module_id: 80 }],
+    ['drafts:draft:section:10', {
+      draft_item_id: 70,
+      files: [{ filename: 'section hero.jpg', filepath: '/media/' }]
+    }],
+    ['drafts:draft:intro:module:20', {
+      draft_item_id: 71,
+      files: [{ filename: 'assignment hero.jpg', filepath: '/' }]
+    }]
+  ]);
+
+  await adapter.applySyncAction({
+    kind: 'section.update',
+    source_key: 'content:section:10',
+    parent_source_key: 'section:10',
+    target_id: null,
+    target_section_number: 1,
+    asset_stage_source_key: 'draft:section:10',
+    fields: { summary: '<img src="@@PLUGINFILE@@/media/section hero.jpg">', summary_format: 'html' }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'assignment_content.update',
+    source_key: 'intro:module:20',
+    parent_source_key: 'module:20',
+    target_id: null,
+    file_area: 'intro',
+    asset_stage_source_key: 'draft:intro:module:20',
+    fields: { intro: '<img src="@@PLUGINFILE@@/assignment hero.jpg">', intro_format: 1 }
+  }, { courseId: 8, createdEntities });
+
+  assert.equal(operations[0].name, 'update_section');
+  assert.equal(operations[0].parameters.section_id, 90);
+  assert.equal(operations[0].parameters.draft_item_id, 70);
+  assert.equal(operations[0].parameters.filename, 'section hero.jpg');
+  assert.equal(operations[1].name, 'update_assignment');
+  assert.equal(operations[1].parameters.module_id, 80);
+  assert.equal(operations[1].parameters.file_area, 'intro');
+  assert.equal(operations[1].parameters.draft_item_id, 71);
+  assert.equal(operations[1].parameters.intro_format, 'html');
+});
+
+test('MoodlIA export produces portable section and assignment editor manifests', async () => {
+  const sectionFile = {
+    filename: 'section.jpg', filepath: '/', filesize: 3, mimetype: 'image/jpeg',
+    content_hash: 'section-hash', url: 'https://source.example/pluginfile.php/1/course/section/10/section.jpg'
+  };
+  const introFile = {
+    filename: 'intro.png', filepath: '/media/', filesize: 4, mimetype: 'image/png',
+    content_hash: 'intro-hash', url: 'https://source.example/pluginfile.php/2/mod_assign/intro/0/media/intro.png'
+  };
+  const client = {
+    async callOperation(name) {
+      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_contents') return {
+        sections: [{
+          section_id: 10, section_number: 0, name: 'General', visible: true,
+          summary: '<img src="https://source.example/pluginfile.php/1/course/section/10/section.jpg">',
+          summary_raw: '<img src="@@PLUGINFILE@@/section.jpg">', summary_format: 'html',
+          summary_files: [sectionFile],
+          modules: [{ module_id: 20, instance_id: 30, module_type: 'assign', name: 'Task', visible: true }]
+        }]
+      };
+      if (name === 'get_groups') return { groups: [] };
+      if (name === 'get_groupings') return { groupings: [] };
+      if (name === 'get_course_assignments') return { assignments: [{
+        module_id: 20, name: 'Task', intro: '<img src="@@PLUGINFILE@@/media/intro.png">', intro_format: 1,
+        intro_files: [introFile], activity: '', activity_format: 1, activity_files: [],
+        submission_plugins: [], feedback_plugins: []
+      }] };
+      if (name === 'get_assignment_grading_form') return { active_method: '', supported: false };
+      throw new Error(`Unexpected operation ${name}`);
+    },
+    async downloadFile(url) {
+      return new Uint8Array(url.includes('section.jpg') ? [1, 2, 3] : [4, 5, 6, 7]);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://source.example', moodle_version: '5.3',
+    plugin_version: '0.1.211', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(7);
+  assert.equal(exported.sections[0].summary, '<img src="@@PLUGINFILE@@/section.jpg">');
+  assert.equal(exported.sections[0].files[0].sha256.length, 64);
+  assert.equal(exported.sections[0].modules[0].authoring.content.intro_files[0].sha256.length, 64);
+  assert.deepEqual(exported.assets.map((asset) => asset.owner.file_area), ['section', 'intro']);
+});
+
 test('CLI documents adaptive capabilities and course sync', async () => {
   const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
   const capabilities = await execFileAsync(process.execPath, [cli, 'capabilities', '--help']);

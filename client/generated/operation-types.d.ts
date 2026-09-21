@@ -1867,6 +1867,18 @@ export interface GetCourseContentsResponse {
     section_number: number;
     name: string;
     summary: string;
+    summary_raw: string;
+    summary_format: string;
+    summary_files: {
+      file_id: number;
+      filename: string;
+      url: string;
+      filepath: string;
+      filesize: number;
+      mimetype: string;
+      content_hash: string;
+      time_modified: number;
+    }[];
     visible: boolean;
     modules: {
       module_id: number;
@@ -2689,7 +2701,18 @@ export interface CreateSectionResponse {
   section_number: number;
   name: string;
   summary: string;
+  summary_raw: string;
   summary_format: string;
+  summary_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    content_hash: string;
+    time_modified: number;
+  }[];
   visible: boolean;
 }
 
@@ -2699,7 +2722,18 @@ export interface UpdateSectionResponse {
   section_number: number;
   name: string;
   summary: string;
+  summary_raw: string;
   summary_format: string;
+  summary_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    content_hash: string;
+    time_modified: number;
+  }[];
   visible: boolean;
   uploaded_files: {
     file_id: number;
@@ -2708,6 +2742,7 @@ export interface UpdateSectionResponse {
     filepath: string;
     filesize: number;
     mimetype: string;
+    content_hash: string;
     time_modified: number;
   }[];
 }
@@ -4608,6 +4643,28 @@ export interface GetCourseAssignmentsResponse {
     intro_format: number;
     activity: string;
     activity_format: number;
+    intro_files: {
+      file_id: number;
+      filename: string;
+      url: string;
+      filepath: string;
+      filesize: number;
+      mimetype: string;
+      content_hash: string;
+      time_modified: number;
+      file_area: string;
+    }[];
+    activity_files: {
+      file_id: number;
+      filename: string;
+      url: string;
+      filepath: string;
+      filesize: number;
+      mimetype: string;
+      content_hash: string;
+      time_modified: number;
+      file_area: string;
+    }[];
     allowsubmissionsfromdate: number;
     duedate: number;
     cutoffdate: number;
@@ -4644,6 +4701,28 @@ export interface UpdateAssignmentResponse {
   intro_format: number;
   activity: string;
   activity_format: number;
+  intro_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    content_hash: string;
+    time_modified: number;
+    file_area: string;
+  }[];
+  activity_files: {
+    file_id: number;
+    filename: string;
+    url: string;
+    filepath: string;
+    filesize: number;
+    mimetype: string;
+    content_hash: string;
+    time_modified: number;
+    file_area: string;
+  }[];
   allowsubmissionsfromdate: number;
   duedate: number;
   cutoffdate: number;
@@ -4675,6 +4754,7 @@ export interface UpdateAssignmentResponse {
     filepath: string;
     filesize: number;
     mimetype: string;
+    content_hash: string;
     time_modified: number;
     file_area: string;
   }[];

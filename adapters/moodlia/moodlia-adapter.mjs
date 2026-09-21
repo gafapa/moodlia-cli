@@ -118,7 +118,7 @@ async function hashFiles(client, files) {
   }));
 }
 
-function assignmentAuthoring(assignment, gradingForm) {
+async function assignmentAuthoring(client, assignment, gradingForm) {
   const settings = {
     submission_attachments: Boolean(assignment.submissionattachments),
     submission_drafts: Boolean(assignment.submissiondrafts),
@@ -161,13 +161,17 @@ function assignmentAuthoring(assignment, gradingForm) {
       options: parseObject(gradingForm.options_json)
     }
     : null;
+  const intro = normalizeEditorContent(assignment.intro, assignment.intro_files);
+  const activity = normalizeEditorContent(assignment.activity, assignment.activity_files);
   return {
     kind: 'assignment',
     content: {
-      intro: String(assignment.intro ?? ''),
+      intro: intro.content,
       intro_format: Number(assignment.intro_format ?? 1),
-      activity: String(assignment.activity ?? ''),
-      activity_format: Number(assignment.activity_format ?? 1)
+      intro_files: await hashFiles(client, intro.files),
+      activity: activity.content,
+      activity_format: Number(assignment.activity_format ?? 1),
+      activity_files: await hashFiles(client, activity.files)
     },
     settings,
     rubric,
@@ -241,6 +245,14 @@ export class MoodliaMoodleAdapter {
     const assignmentsByModule = new Map((assignmentsResult.value.assignments ?? [])
       .map((assignment) => [Number(assignment.module_id), assignment]));
     const sections = structuredClone(contents.sections ?? []);
+    await Promise.all(sections.map(async (section) => {
+      const normalized = normalizeEditorContent(
+        section.summary_raw ?? section.summary,
+        section.summary_files
+      );
+      section.summary = normalized.content;
+      section.files = await hashFiles(this.client, normalized.files);
+    }));
     await Promise.all(sections.flatMap((section) => (section.modules ?? []).map(async (module) => {
       if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop'].includes(module.module_type)) return;
       try {
@@ -252,7 +264,7 @@ export class MoodliaMoodleAdapter {
             module_id: module.module_id
           }).catch(() => null);
           module.authoring_completeness = 'selected';
-          module.authoring = assignmentAuthoring(assignment, gradingForm);
+          module.authoring = await assignmentAuthoring(this.client, assignment, gradingForm);
           return;
         }
         const details = await this.client.callOperation('get_module_details', {
@@ -583,7 +595,8 @@ export class MoodliaMoodleAdapter {
     }
     if (action.kind === 'section.update') {
       const { order, ...fields } = action.fields;
-      let sectionId = action.target_id;
+      const createdSection = createdEntities.get(`sections:${action.parent_source_key ?? action.source_key}`);
+      let sectionId = action.target_id ?? createdSection?.section_id;
       if (!sectionId) {
         const contents = await this.client.callOperation('get_course_contents', { course_id: courseId });
         sectionId = (contents.sections ?? []).find(
@@ -593,10 +606,17 @@ export class MoodliaMoodleAdapter {
       if (!Number.isInteger(Number(sectionId))) {
         throw new TypeError(`Cannot resolve destination section ${action.target_section_number}.`);
       }
+      const staged = action.asset_stage_source_key
+        ? createdEntities.get(`drafts:${action.asset_stage_source_key}`)
+        : null;
       return this.client.callOperation('update_section', {
         course_id: courseId,
         section_id: Number(sectionId),
-        ...fields
+        ...fields,
+        ...(staged?.draft_item_id ? {
+          filename: staged.files[0].filename,
+          draft_item_id: staged.draft_item_id
+        } : {})
       });
     }
     if (action.kind === 'group.create') {
@@ -734,10 +754,20 @@ export class MoodliaMoodleAdapter {
         || (action.fields.activity_format !== undefined && !fields.activity_format)) {
         throw new TypeError('Assignment content format cannot be represented by the destination operation.');
       }
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key ?? action.source_key}`);
+      const moduleId = action.target_id ?? createdModule?.module_id;
+      const staged = action.asset_stage_source_key
+        ? createdEntities.get(`drafts:${action.asset_stage_source_key}`)
+        : null;
       return this.client.callOperation('update_assignment', {
         course_id: courseId,
-        module_id: action.target_id,
-        ...fields
+        module_id: Number(moduleId),
+        ...fields,
+        ...(staged?.draft_item_id ? {
+          filename: staged.files[0].filename,
+          draft_item_id: staged.draft_item_id,
+          file_area: action.file_area
+        } : {})
       });
     }
     if (action.kind === 'assignment_rubric.set') {

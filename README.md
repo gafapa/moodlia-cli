@@ -4,7 +4,7 @@
 
 MoodlIA 0.3 adds an adaptive path alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
 
-Typed Page, Text and media, and URL updates preserve the destination course-module identity. Their native editor files can be staged as one Moodle draft and synchronized with portable `@@PLUGINFILE@@` references.
+Typed section, Page, Text and media, URL, Book, and assignment updates preserve destination identities. Native editor files are grouped by owner and file area, staged as one Moodle draft, and synchronized with portable `@@PLUGINFILE@@` references.
 
 ```json
 {
@@ -45,7 +45,7 @@ moodlia course sync `
   --plan-digest "sha256:..." --allow-write
 ```
 
-The preview covers verified course fields, hidden target creation, MoodlIA-backed sections, groups and grouping membership, portable Page/Label/URL creation, identity-preserving Page updates with editor files, file resources and folders on creation, Books and multi-file chapters, selected assignment content and new rubrics, and new Workshop grading forms. Asset bytes are streamed through a protected temporary cache, hashed during download, uploaded to an owner-scoped draft, and removed after each action. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
+The preview covers verified course fields, hidden target creation, MoodlIA-backed sections with editor files, groups and grouping membership, portable Page/Label/URL creation and identity-preserving updates, file resources and folders on creation, Books and multi-file chapters, selected assignment content and separate description/instruction file areas, new rubrics, and new Workshop grading forms. Asset bytes are streamed through a protected temporary cache, hashed during download, uploaded to an owner-scoped draft, and removed after each action. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
 
 Durable jobs use the same SQLite state for inspection, history, cancellation, reconciliation-based resume, and live verification:
 

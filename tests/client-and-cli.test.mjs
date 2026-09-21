@@ -664,7 +664,18 @@ test('update-section reads UTF-8 summary content and uploads a Unicode path', as
       section_number: 1,
       name: 'Start',
       summary: '<figure><img src="https://moodle.test/pluginfile.php/image.jpg" alt="Equipo"></figure>',
+      summary_raw: summary,
       summary_format: 'html',
+      summary_files: [{
+        file_id: 451,
+        filename: 'equipo héroe ü.jpg',
+        url: 'https://moodle.test/pluginfile.php/image.jpg',
+        filepath: '/',
+        filesize: image.length,
+        mimetype: 'image/jpeg',
+        content_hash: '0123456789abcdef0123456789abcdef01234567',
+        time_modified: 1
+      }],
       visible: true,
       uploaded_files: [{
         file_id: 451,
@@ -673,6 +684,7 @@ test('update-section reads UTF-8 summary content and uploads a Unicode path', as
         filepath: '/',
         filesize: image.length,
         mimetype: 'image/jpeg',
+        content_hash: '0123456789abcdef0123456789abcdef01234567',
         time_modified: 1
       }]
     }));
