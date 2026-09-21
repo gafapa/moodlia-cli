@@ -358,6 +358,87 @@ test('question-bank import resolves a newly created bank without exposing source
   assert.deepEqual(JSON.parse(operations[0].parameters.blueprint_json), blueprint);
 });
 
+test('MoodlIA export normalizes Database fields and Feedback item dependencies', async () => {
+  const client = {
+    async callOperation(name, parameters = {}) {
+      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_contents') return { sections: [{
+        section_id: 10, section_number: 0, name: 'General', summary: '', summary_files: [], modules: [
+          { module_id: 20, instance_id: 30, module_type: 'data', name: 'Database', visible: true },
+          { module_id: 21, instance_id: 31, module_type: 'feedback', name: 'Survey', visible: true }
+        ]
+      }] };
+      if (name === 'get_groups') return { groups: [] };
+      if (name === 'get_groupings') return { groupings: [] };
+      if (name === 'get_course_assignments') return { assignments: [] };
+      if (name === 'get_module_details') return {
+        extra_json: JSON.stringify({ activity: parameters.module_id === 20
+          ? { comments: true, default_sort_field_id: 0, default_sort_direction: 0 }
+          : { anonymous: 1, completion_submit: true } })
+      };
+      if (name === 'get_data_fields') return { fields: [{
+        field_id: 500, type: 'menu', name: 'Topic', description: '', required: true,
+        params_json: JSON.stringify({ param1: 'A\nB' })
+      }] };
+      if (name === 'get_feedback_items') return { items: [{
+        item_id: 600, type: 'multichoice', name: 'Useful?', presentation: 'r>>>>>Yes|No<<<<<0',
+        options: 'i', position: 1, label: '', required: true, depend_item_id: 0, depend_value: ''
+      }, {
+        item_id: 601, type: 'textfield', name: 'Why?', presentation: '30|255', options: '',
+        position: 2, label: '', required: false, depend_item_id: 600, depend_value: 'Yes'
+      }] };
+      throw new Error(`Unexpected operation ${name}`);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://source.example', moodle_version: '5.3',
+    plugin_version: '0.1.211', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(7);
+  const [database, feedback] = exported.sections[0].modules;
+  assert.deepEqual(database.authoring.fields[0], {
+    source_field_id: 1, type: 'menu', name: 'Topic', description: '', required: true,
+    options: { param1: 'A\nB' }
+  });
+  assert.equal(feedback.authoring.items[0].definition.subtype, 'radio');
+  assert.deepEqual(feedback.authoring.items[0].definition.choices, ['Yes', 'No']);
+  assert.equal(feedback.authoring.items[1].source_depend_item_id, 1);
+});
+
+test('definition actions resolve new modules and Feedback dependencies', async () => {
+  const operations = [];
+  const adapter = createMoodliaMoodleAdapter({ client: {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return name === 'create_data_field' ? { field_id: 501 } : { item_id: 602 };
+    }
+  } });
+  const createdEntities = new Map([
+    ['modules:module:20', { module_id: 80 }],
+    ['modules:module:21', { module_id: 81 }],
+    ['feedback_items:feedback-item:module:21:1', { item_id: 601 }]
+  ]);
+  await adapter.applySyncAction({
+    kind: 'database_field.create', parent_source_key: 'module:20',
+    fields: { type: 'text', name: 'Topic', description: '', required: true, options: {} }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'feedback_item.create', parent_source_key: 'module:21',
+    dependency_source_key: 'feedback-item:module:21:1',
+    fields: {
+      type: 'textfield', name: 'Why?', definition: { size: 30, max_length: 255 },
+      position: 2, label: '', required: false, source_depend_item_id: 1, depend_value: 'Yes'
+    }
+  }, { courseId: 8, createdEntities });
+  assert.equal(operations[0].name, 'create_data_field');
+  assert.equal(operations[0].parameters.module_id, 80);
+  assert.equal(operations[1].name, 'create_feedback_item');
+  assert.equal(operations[1].parameters.module_id, 81);
+  assert.equal(operations[1].parameters.depend_item_id, 601);
+  assert.equal(operations[1].parameters.source_depend_item_id, undefined);
+});
+
 test('CLI documents adaptive capabilities and course sync', async () => {
   const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
   const capabilities = await execFileAsync(process.execPath, [cli, 'capabilities', '--help']);

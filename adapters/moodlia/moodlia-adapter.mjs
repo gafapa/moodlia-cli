@@ -61,6 +61,99 @@ function normalizeQuestionBankBlueprint(value) {
   };
 }
 
+function normalizeDataField(field, index) {
+  return {
+    source_field_id: index + 1,
+    type: String(field.type ?? ''),
+    name: String(field.name ?? ''),
+    description: String(field.description ?? ''),
+    required: Boolean(field.required),
+    options: parseObject(field.params_json)
+  };
+}
+
+function feedbackChoiceDefinition(item, rated = false) {
+  const presentation = String(item.presentation ?? '');
+  const [choicePart, horizontalPart = '0'] = presentation.split('<<<<<', 2);
+  const separator = choicePart.indexOf('>>>>>');
+  if (separator < 0) return null;
+  const subtypeCode = choicePart.slice(0, separator);
+  const choices = choicePart.slice(separator + 5).split('|').filter((choice) => choice !== '');
+  const subtype = { r: 'radio', c: 'checkbox', d: 'dropdown' }[subtypeCode];
+  if (!subtype || choices.length < 2) return null;
+  const normalizedChoices = rated
+    ? choices.map((choice) => {
+      const ratedSeparator = choice.indexOf('####');
+      if (ratedSeparator < 0 || !Number.isFinite(Number(choice.slice(0, ratedSeparator)))) return null;
+      return { value: Number(choice.slice(0, ratedSeparator)), text: choice.slice(ratedSeparator + 4) };
+    })
+    : choices;
+  if (normalizedChoices.some((choice) => choice === null)) return null;
+  return {
+    subtype,
+    choices: normalizedChoices,
+    horizontal: horizontalPart === '1',
+    ignore_empty: String(item.options ?? '').includes('i'),
+    hide_no_select: String(item.options ?? '').includes('h')
+  };
+}
+
+function portableFeedbackDefinition(item) {
+  const presentation = String(item.presentation ?? '');
+  switch (String(item.type ?? '')) {
+    case 'textfield': {
+      const [size, maxLength] = presentation.split('|').map(Number);
+      return Number.isFinite(size) && Number.isFinite(maxLength)
+        ? { size, max_length: maxLength } : null;
+    }
+    case 'textarea': {
+      const [width, height] = presentation.split('|').map(Number);
+      return Number.isFinite(width) && Number.isFinite(height)
+        ? { width, height } : null;
+    }
+    case 'numeric': {
+      const [from, to] = presentation.split('|');
+      return {
+        range_from: from === '-' || from === '' ? null : Number(from),
+        range_to: to === '-' || to === '' ? null : Number(to)
+      };
+    }
+    case 'multichoice': return feedbackChoiceDefinition(item, false);
+    case 'multichoicerated': return feedbackChoiceDefinition(item, true);
+    case 'label': return { content: presentation };
+    case 'info': return { mode: { 1: 'response_time', 2: 'course', 3: 'category' }[presentation] ?? presentation };
+    case 'captcha':
+    case 'pagebreak': return {};
+    default: return null;
+  }
+}
+
+function normalizeFeedbackItems(items) {
+  const ids = new Map((items ?? []).map((item, index) => [Number(item.item_id), index + 1]));
+  const losses = [];
+  const normalized = [];
+  for (const [index, item] of (items ?? []).entries()) {
+    const definition = portableFeedbackDefinition(item);
+    if (definition === null || Object.values(definition).some((value) => Number.isNaN(value))) {
+      losses.push(`unsupported_feedback_item:${String(item.type ?? 'unknown')}:${index + 1}`);
+      continue;
+    }
+    const sourceDependItemId = ids.get(Number(item.depend_item_id)) ?? 0;
+    normalized.push({
+      source_item_id: index + 1,
+      type: String(item.type ?? ''),
+      name: String(item.name ?? ''),
+      definition,
+      position: Number(item.position ?? index + 1),
+      label: String(item.label ?? ''),
+      required: Boolean(item.required),
+      source_depend_item_id: sourceDependItemId,
+      depend_value: String(item.depend_value ?? '')
+    });
+  }
+  return { items: normalized, losses };
+}
+
 async function uploadMaterial(client, material, itemId = 0) {
   const options = {
     filename: material.asset.filename,
@@ -307,7 +400,7 @@ export class MoodliaMoodleAdapter {
       section.files = await hashFiles(this.client, normalized.files);
     }));
     await Promise.all(sections.flatMap((section) => (section.modules ?? []).map(async (module) => {
-      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank']
+      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank', 'data', 'feedback']
         .includes(module.module_type)) return;
       try {
         if (module.module_type === 'assign') {
@@ -348,6 +441,59 @@ export class MoodliaMoodleAdapter {
         const extra = parseObject(details.extra_json);
         const activity = parseObject(extra.activity);
         module.authoring_completeness = 'complete';
+        if (module.module_type === 'data') {
+          const fields = await this.client.callOperation('get_data_fields', {
+            course_id: courseId,
+            module_id: module.module_id
+          });
+          const defaultSortFieldId = Number(activity.default_sort_field_id ?? 0);
+          module.authoring = {
+            kind: 'database',
+            settings: {
+              intro: String(activity.intro ?? ''),
+              comments: Boolean(activity.comments),
+              approval_required: Boolean(activity.approval_required),
+              manage_approved: activity.manage_approved === undefined ? true : Boolean(activity.manage_approved),
+              available_from: Number(activity.available_from ?? 0),
+              available_to: Number(activity.available_to ?? 0),
+              view_from: Number(activity.view_from ?? 0),
+              view_to: Number(activity.view_to ?? 0),
+              required_entries: Number(activity.required_entries ?? 0),
+              required_entries_to_view: Number(activity.required_entries_to_view ?? 0),
+              max_entries: Number(activity.max_entries ?? 0),
+              rss_articles: Number(activity.rss_articles ?? 0),
+              default_sort_direction: Number(activity.default_sort_direction ?? 0) === 1
+                ? 'descending' : 'ascending',
+              edit_any: Boolean(activity.edit_any),
+              notification: Number(activity.notification ?? 0),
+              completion_entries: Number(activity.completion_entries ?? 0)
+            },
+            fields: (fields.fields ?? []).map(normalizeDataField),
+            losses: defaultSortFieldId > 0 ? ['default_sort_field_requires_destination_field_mapping'] : []
+          };
+          return;
+        }
+        if (module.module_type === 'feedback') {
+          const result = await this.client.callOperation('get_feedback_items', {
+            course_id: courseId,
+            module_id: module.module_id
+          });
+          const normalized = normalizeFeedbackItems(result.items ?? []);
+          module.authoring_completeness = normalized.losses.length === 0 ? 'complete' : 'selected';
+          module.authoring = {
+            kind: 'feedback',
+            settings: {
+              intro: String(activity.intro ?? ''),
+              time_open: Number(activity.time_open ?? 0),
+              time_close: Number(activity.time_close ?? 0),
+              anonymous: Number(activity.anonymous ?? 1) === 2 ? 'named' : 'anonymous',
+              completion_submit: Boolean(activity.completion_submit)
+            },
+            items: normalized.items,
+            losses: normalized.losses
+          };
+          return;
+        }
         if (module.module_type === 'page') {
           const normalized = normalizeEditorContent(activity.content, activity.files);
           module.authoring = {
@@ -559,6 +705,8 @@ export class MoodliaMoodleAdapter {
     const questionBankWriteAllowed = evidence.question_manage === true
       && evidence.question_bank_module_available === true
       && activityWriteAllowed;
+    const databaseFieldWriteAllowed = evidence.database_field_manage === true && activityWriteAllowed;
+    const feedbackItemWriteAllowed = evidence.feedback_item_manage === true && activityWriteAllowed;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -663,6 +811,17 @@ export class MoodliaMoodleAdapter {
       question_bank_import: {
         available: this.hasDeclaredOperation('import_question_bank_blueprint') && questionBankWriteAllowed,
         supported_fields: ['blueprint']
+      },
+      database_field_create: {
+        available: this.hasDeclaredOperation('create_data_field') && databaseFieldWriteAllowed,
+        supported_fields: ['type', 'name', 'description', 'required', 'options']
+      },
+      feedback_item_create: {
+        available: this.hasDeclaredOperation('create_feedback_item') && feedbackItemWriteAllowed,
+        supported_fields: [
+          'type', 'name', 'definition', 'position', 'label', 'required',
+          'source_depend_item_id', 'depend_value'
+        ]
       }
     };
   }
@@ -896,6 +1055,38 @@ export class MoodliaMoodleAdapter {
         module_id: Number(moduleId),
         strategy: action.fields.strategy,
         definition: action.fields.definition
+      });
+    }
+    if (action.kind === 'database_field.create') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      return this.client.callOperation('create_data_field', {
+        course_id: courseId,
+        module_id: Number(moduleId),
+        field_type: action.fields.type,
+        name: action.fields.name,
+        description: action.fields.description,
+        required: action.fields.required,
+        options: action.fields.options
+      });
+    }
+    if (action.kind === 'feedback_item.create') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      const dependency = action.dependency_source_key
+        ? createdEntities.get(`feedback_items:${action.dependency_source_key}`)
+        : null;
+      return this.client.callOperation('create_feedback_item', {
+        course_id: courseId,
+        module_id: Number(moduleId),
+        type: action.fields.type,
+        name: action.fields.name,
+        definition: action.fields.definition,
+        position: action.fields.position,
+        label: action.fields.label,
+        required: action.fields.required,
+        ...(dependency?.item_id ? { depend_item_id: Number(dependency.item_id) } : {}),
+        depend_value: action.fields.depend_value
       });
     }
     if (action.kind === 'question_bank.import') {
