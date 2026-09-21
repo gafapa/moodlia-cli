@@ -244,7 +244,10 @@ test('MoodlIA export produces portable section and assignment editor manifests',
           summary: '<img src="https://source.example/pluginfile.php/1/course/section/10/section.jpg">',
           summary_raw: '<img src="@@PLUGINFILE@@/section.jpg">', summary_format: 'html',
           summary_files: [sectionFile],
-          modules: [{ module_id: 20, instance_id: 30, module_type: 'assign', name: 'Task', visible: true }]
+          modules: [
+            { module_id: 20, instance_id: 30, module_type: 'assign', name: 'Task', visible: true },
+            { module_id: 21, instance_id: 31, module_type: 'qbank', name: 'Shared bank', visible: true }
+          ]
         }]
       };
       if (name === 'get_groups') return { groups: [] };
@@ -262,6 +265,20 @@ test('MoodlIA export produces portable section and assignment editor manifests',
         }],
         comments: [{ sort_order: 1, description: 'Well supported' }]
       };
+      if (name === 'export_question_bank_blueprint') return {
+        skipped_question_count: 0,
+        blueprint_json: JSON.stringify({
+          schema: 'moodlia.question_bank_blueprint.v1', exported_at: 100, source_course_id: 7,
+          bank_scope: 'course_shared', context_id: 99, question_bank_module_id: 21,
+          categories: [{
+            source_category_id: 501, source_parent_id: 0, name: 'Questions',
+            questions: [{
+              source_question_id: 900, question_type: 'truefalse', name: 'Earth',
+              question_text: '<p>Round?</p>', options: { correct_answer: true }
+            }]
+          }]
+        })
+      };
       throw new Error(`Unexpected operation ${name}`);
     },
     async downloadFile(url) {
@@ -278,6 +295,8 @@ test('MoodlIA export produces portable section and assignment editor manifests',
   assert.equal(exported.sections[0].files[0].sha256.length, 64);
   assert.equal(exported.sections[0].modules[0].authoring.content.intro_files[0].sha256.length, 64);
   assert.equal(exported.sections[0].modules[0].authoring.grading_definition.method, 'guide');
+  assert.equal(exported.sections[0].modules[1].authoring.blueprint.categories[0].source_category_id, 1);
+  assert.equal(exported.sections[0].modules[1].authoring.blueprint.categories[0].questions[0].source_question_id, 1);
   assert.deepEqual(exported.assets.map((asset) => asset.owner.file_area), ['section', 'intro']);
 });
 
@@ -313,6 +332,30 @@ test('assignment grading-definition actions use the canonical wrapped payloads',
   assert.ok(Array.isArray(operations[1].parameters.items.items));
   assert.ok(Array.isArray(operations[2].parameters.criteria.criteria));
   assert.ok(Array.isArray(operations[2].parameters.comments.comments));
+});
+
+test('question-bank import resolves a newly created bank without exposing source ids as parameters', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { created_question_count: 1 };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const blueprint = {
+    schema: 'moodlia.question_bank_blueprint.v1', bank_scope: 'course_shared', categories: []
+  };
+  await adapter.applySyncAction({
+    kind: 'question_bank.import', parent_source_key: 'module:20', target_module_id: null,
+    fields: { blueprint }
+  }, {
+    courseId: 8,
+    createdEntities: new Map([['modules:module:20', { module_id: 80 }]])
+  });
+  assert.equal(operations[0].name, 'import_question_bank_blueprint');
+  assert.equal(operations[0].parameters.question_bank_module_id, 80);
+  assert.deepEqual(JSON.parse(operations[0].parameters.blueprint_json), blueprint);
 });
 
 test('CLI documents adaptive capabilities and course sync', async () => {

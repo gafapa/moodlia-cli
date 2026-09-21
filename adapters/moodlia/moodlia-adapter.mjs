@@ -40,6 +40,27 @@ function parseObject(value) {
   }
 }
 
+function normalizeQuestionBankBlueprint(value) {
+  const blueprint = parseObject(value);
+  const categoryIds = new Map((blueprint.categories ?? []).map((category, index) => [
+    Number(category.source_category_id), index + 1
+  ]));
+  let questionIndex = 0;
+  return {
+    schema: String(blueprint.schema ?? 'moodlia.question_bank_blueprint.v1'),
+    bank_scope: String(blueprint.bank_scope ?? 'course_shared'),
+    categories: (blueprint.categories ?? []).map((category, index) => ({
+      source_category_id: index + 1,
+      source_parent_id: categoryIds.get(Number(category.source_parent_id)) ?? 0,
+      name: String(category.name ?? ''),
+      questions: (category.questions ?? []).map((question) => ({
+        ...structuredClone(question),
+        source_question_id: ++questionIndex
+      }))
+    }))
+  };
+}
+
 async function uploadMaterial(client, material, itemId = 0) {
   const options = {
     filename: material.asset.filename,
@@ -286,7 +307,8 @@ export class MoodliaMoodleAdapter {
       section.files = await hashFiles(this.client, normalized.files);
     }));
     await Promise.all(sections.flatMap((section) => (section.modules ?? []).map(async (module) => {
-      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop'].includes(module.module_type)) return;
+      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank']
+        .includes(module.module_type)) return;
       try {
         if (module.module_type === 'assign') {
           const assignment = assignmentsByModule.get(Number(module.module_id));
@@ -297,6 +319,26 @@ export class MoodliaMoodleAdapter {
           }).catch(() => null);
           module.authoring_completeness = 'selected';
           module.authoring = await assignmentAuthoring(this.client, assignment, gradingForm);
+          return;
+        }
+        if (module.module_type === 'qbank') {
+          const exported = await this.client.callOperation('export_question_bank_blueprint', {
+            course_id: courseId,
+            bank_scope: 'course_shared',
+            question_bank_module_id: module.module_id,
+            include_unsupported: true
+          });
+          const blueprint = normalizeQuestionBankBlueprint(exported.blueprint_json);
+          module.authoring_completeness = Number(exported.skipped_question_count ?? 0) === 0
+            ? 'complete'
+            : 'selected';
+          module.authoring = {
+            kind: 'question_bank',
+            blueprint,
+            losses: Number(exported.skipped_question_count ?? 0) > 0
+              ? ['unsupported_questions_not_exported']
+              : []
+          };
           return;
         }
         const details = await this.client.callOperation('get_module_details', {
@@ -514,6 +556,9 @@ export class MoodliaMoodleAdapter {
     const bookWriteAllowed = evidence.book_edit === true && activityWriteAllowed;
     const gradingFormWriteAllowed = evidence.assignment_grade === true && evidence.grading_form_manage === true;
     const workshopFormWriteAllowed = evidence.workshop_form_manage === true && activityWriteAllowed;
+    const questionBankWriteAllowed = evidence.question_manage === true
+      && evidence.question_bank_module_available === true
+      && activityWriteAllowed;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -614,6 +659,10 @@ export class MoodliaMoodleAdapter {
       workshop_form_set: {
         available: this.hasDeclaredOperation('set_workshop_grading_form') && workshopFormWriteAllowed,
         supported_fields: ['strategy', 'definition']
+      },
+      question_bank_import: {
+        available: this.hasDeclaredOperation('import_question_bank_blueprint') && questionBankWriteAllowed,
+        supported_fields: ['blueprint']
       }
     };
   }
@@ -847,6 +896,17 @@ export class MoodliaMoodleAdapter {
         module_id: Number(moduleId),
         strategy: action.fields.strategy,
         definition: action.fields.definition
+      });
+    }
+    if (action.kind === 'question_bank.import') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      return this.client.callOperation('import_question_bank_blueprint', {
+        course_id: courseId,
+        blueprint_json: JSON.stringify(action.fields.blueprint),
+        bank_scope: 'course_shared',
+        question_bank_module_id: Number(moduleId),
+        create_categories: true
       });
     }
     throw new TypeError(`MoodlIA adapter cannot apply sync action ${action.kind}.`);
