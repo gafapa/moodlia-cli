@@ -257,6 +257,11 @@ test('MoodlIA export produces portable section and assignment editor manifests',
         intro_files: [introFile], activity: '', activity_format: 1, activity_files: [],
         submission_plugins: [], feedback_plugins: []
       }] };
+      if (name === 'get_course_completion_criteria') return {
+        course_completion_enabled: true, criteria_locked: false,
+        criteria_aggregation: 'all', activity_aggregation: 'all', required_module_ids: [20],
+        grade_criterion_enabled: true, required_course_grade_percent: 80
+      };
       if (name === 'get_assignment_grading_form') return {
         active_method: 'guide', supported: true, name: 'Guide', description: '', options_json: '{}',
         criteria: [{
@@ -297,6 +302,8 @@ test('MoodlIA export produces portable section and assignment editor manifests',
   assert.equal(exported.sections[0].modules[0].authoring.grading_definition.method, 'guide');
   assert.equal(exported.sections[0].modules[1].authoring.blueprint.categories[0].source_category_id, 1);
   assert.equal(exported.sections[0].modules[1].authoring.blueprint.categories[0].questions[0].source_question_id, 1);
+  assert.equal(exported.course_completion.required_modules[0].source_key, 'module:20');
+  assert.equal(exported.course_completion.required_course_grade_percent, 80);
   assert.deepEqual(exported.assets.map((asset) => asset.owner.file_area), ['section', 'intro']);
 });
 
@@ -437,6 +444,34 @@ test('definition actions resolve new modules and Feedback dependencies', async (
   assert.equal(operations[1].parameters.module_id, 81);
   assert.equal(operations[1].parameters.depend_item_id, 601);
   assert.equal(operations[1].parameters.source_depend_item_id, undefined);
+});
+
+test('course completion actions resolve destination activity ids', async () => {
+  const operations = [];
+  const adapter = createMoodliaMoodleAdapter({ client: {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { required_module_ids: parameters.required_module_ids };
+    }
+  } });
+  await adapter.applySyncAction({
+    kind: 'course_completion.set',
+    fields: {
+      required_modules: [
+        { source_key: 'module:20', target_id: null },
+        { source_key: 'module:21', target_id: 91 }
+      ],
+      require_all_activities: true,
+      required_course_grade_percent: 80,
+      criteria_aggregation: 'all'
+    }
+  }, {
+    courseId: 8,
+    createdEntities: new Map([['modules:module:20', { module_id: 90 }]])
+  });
+  assert.equal(operations[0].name, 'set_course_completion_criteria');
+  assert.deepEqual(operations[0].parameters.required_module_ids, [90, 91]);
+  assert.equal(operations[0].parameters.required_course_grade_percent, 80);
 });
 
 test('CLI documents adaptive capabilities and course sync', async () => {

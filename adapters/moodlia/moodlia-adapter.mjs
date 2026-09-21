@@ -365,7 +365,7 @@ export class MoodliaMoodleAdapter {
 
   async exportCourse(courseId) {
     const site = this.discovery ?? await this.discoverSite();
-    const [course, contents, groupsResult, groupingsResult, assignmentsResult] = await Promise.all([
+    const [course, contents, groupsResult, groupingsResult, assignmentsResult, completionResult] = await Promise.all([
       this.client.callOperation('get_course_details', { course_id: courseId }),
       this.client.callOperation('get_course_contents', { course_id: courseId }),
       this.client.callOperation('get_groups', { course_id: courseId }).then(
@@ -379,6 +379,10 @@ export class MoodliaMoodleAdapter {
       this.client.callOperation('get_course_assignments', { course_id: courseId }).then(
         (value) => ({ value, error: null }),
         (error) => ({ value: { assignments: [] }, error })
+      ),
+      this.client.callOperation('get_course_completion_criteria', { course_id: courseId }).then(
+        (value) => ({ value, error: null }),
+        (error) => ({ value: null, error })
       )
     ]);
     const exclusions = [
@@ -388,6 +392,7 @@ export class MoodliaMoodleAdapter {
     if (groupsResult.error) exclusions.push({ scope: 'groups', reason: 'source_read_unavailable' });
     if (groupingsResult.error) exclusions.push({ scope: 'groupings', reason: 'source_read_unavailable' });
     if (assignmentsResult.error) exclusions.push({ scope: 'assignments', reason: 'source_read_unavailable' });
+    if (completionResult.error) exclusions.push({ scope: 'course_completion', reason: 'source_read_unavailable' });
     const assignmentsByModule = new Map((assignmentsResult.value.assignments ?? [])
       .map((assignment) => [Number(assignment.module_id), assignment]));
     const sections = structuredClone(contents.sections ?? []);
@@ -654,12 +659,29 @@ export class MoodliaMoodleAdapter {
         });
       }
     })));
+    const modules = sections.flatMap((section) => section.modules ?? []);
+    const completion = completionResult.value ? {
+      enabled: Boolean(completionResult.value.course_completion_enabled),
+      locked: Boolean(completionResult.value.criteria_locked),
+      criteria_aggregation: String(completionResult.value.criteria_aggregation ?? 'all'),
+      activity_aggregation: String(completionResult.value.activity_aggregation ?? 'all'),
+      required_modules: (completionResult.value.required_module_ids ?? []).map((moduleId) => {
+        const module = modules.find((entry) => Number(entry.module_id) === Number(moduleId));
+        return { source_key: module ? `module:${Number(module.module_id)}` : null, source_module_id: Number(moduleId) };
+      }),
+      grade_criterion_enabled: Boolean(completionResult.value.grade_criterion_enabled),
+      required_course_grade_percent: Number(completionResult.value.required_course_grade_percent ?? 0),
+      losses: (completionResult.value.required_module_ids ?? []).some((moduleId) =>
+        !modules.some((entry) => Number(entry.module_id) === Number(moduleId)))
+        ? ['completion_activity_not_present_in_course_inventory'] : []
+    } : null;
     return createCourseSyncModel({
       site,
       course,
       sections,
       groups: groupsResult.value.groups ?? [],
       groupings: groupingsResult.value.groupings ?? [],
+      courseCompletion: completion,
       exclusions,
       unknowns: exclusions
         .filter((entry) => entry.reason.endsWith('_read_unavailable'))
@@ -707,6 +729,7 @@ export class MoodliaMoodleAdapter {
       && activityWriteAllowed;
     const databaseFieldWriteAllowed = evidence.database_field_manage === true && activityWriteAllowed;
     const feedbackItemWriteAllowed = evidence.feedback_item_manage === true && activityWriteAllowed;
+    const completionWriteAllowed = evidence.completion_manage === true;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -821,6 +844,13 @@ export class MoodliaMoodleAdapter {
         supported_fields: [
           'type', 'name', 'definition', 'position', 'label', 'required',
           'source_depend_item_id', 'depend_value'
+        ]
+      },
+      course_completion_set: {
+        available: this.hasDeclaredOperation('set_course_completion_criteria') && completionWriteAllowed,
+        supported_fields: [
+          'required_modules', 'require_all_activities',
+          'required_course_grade_percent', 'criteria_aggregation'
         ]
       }
     };
@@ -1087,6 +1117,24 @@ export class MoodliaMoodleAdapter {
         required: action.fields.required,
         ...(dependency?.item_id ? { depend_item_id: Number(dependency.item_id) } : {}),
         depend_value: action.fields.depend_value
+      });
+    }
+    if (action.kind === 'course_completion.set') {
+      const requiredModuleIds = action.fields.required_modules.map((requirement) => {
+        const created = createdEntities.get(`modules:${requirement.source_key}`);
+        const moduleId = requirement.target_id ?? created?.module_id;
+        if (!Number.isInteger(Number(moduleId)) || Number(moduleId) <= 0) {
+          throw new TypeError(`Cannot resolve completion activity ${requirement.source_key}.`);
+        }
+        return Number(moduleId);
+      });
+      return this.client.callOperation('set_course_completion_criteria', {
+        course_id: courseId,
+        required_module_ids: requiredModuleIds,
+        require_all_activities: action.fields.require_all_activities,
+        ...(action.fields.required_course_grade_percent === undefined ? {}
+          : { required_course_grade_percent: action.fields.required_course_grade_percent }),
+        criteria_aggregation: action.fields.criteria_aggregation
       });
     }
     if (action.kind === 'question_bank.import') {
