@@ -40,6 +40,16 @@ function parseObject(value) {
   }
 }
 
+function parseArray(value) {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value ?? '[]'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizeQuestionBankBlueprint(value) {
   const blueprint = parseObject(value);
   const categoryIds = new Map((blueprint.categories ?? []).map((category, index) => [
@@ -59,6 +69,19 @@ function normalizeQuestionBankBlueprint(value) {
       }))
     }))
   };
+}
+
+function questionBlueprintIdMap(value) {
+  const blueprint = parseObject(value);
+  const ids = new Map();
+  let normalizedId = 0;
+  for (const category of blueprint.categories ?? []) {
+    for (const question of category.questions ?? []) {
+      normalizedId += 1;
+      ids.set(Number(question.source_question_id), normalizedId);
+    }
+  }
+  return ids;
 }
 
 function normalizeDataField(field, index) {
@@ -405,7 +428,7 @@ export class MoodliaMoodleAdapter {
       section.files = await hashFiles(this.client, normalized.files);
     }));
     await Promise.all(sections.flatMap((section) => (section.modules ?? []).map(async (module) => {
-      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank', 'data', 'feedback']
+      if (!['assign', 'book', 'page', 'label', 'url', 'resource', 'folder', 'workshop', 'qbank', 'data', 'feedback', 'quiz']
         .includes(module.module_type)) return;
       try {
         if (module.module_type === 'assign') {
@@ -446,6 +469,79 @@ export class MoodliaMoodleAdapter {
         const extra = parseObject(details.extra_json);
         const activity = parseObject(extra.activity);
         module.authoring_completeness = 'complete';
+        if (module.module_type === 'quiz') {
+          const [exported, quizQuestions] = await Promise.all([
+            this.client.callOperation('export_question_bank_blueprint', {
+              course_id: courseId,
+              bank_scope: 'quiz_private',
+              quiz_module_id: module.module_id,
+              include_unsupported: true
+            }),
+            this.client.callOperation('get_quiz_questions', { quiz_module_id: module.module_id })
+          ]);
+          const sourceQuestionIds = questionBlueprintIdMap(exported.blueprint_json);
+          const blueprint = normalizeQuestionBankBlueprint(exported.blueprint_json);
+          const slots = (quizQuestions.questions ?? []).map((question) => ({
+            source_question_id: sourceQuestionIds.get(Number(question.question_id)) ?? null,
+            slot: Number(question.slot),
+            page: Number(question.page ?? 1),
+            max_mark: Number(question.maxmark ?? 1)
+          }));
+          const questionsPerPage = Math.max(1, Number(activity.questionsperpage ?? 1));
+          const losses = [
+            'quiz_review_and_access_configuration_not_exported',
+            ...(Number(exported.skipped_question_count ?? 0) > 0
+              ? ['unsupported_questions_not_exported'] : []),
+            ...(slots.some((slot) => slot.source_question_id === null)
+              ? ['quiz_slot_question_not_exported'] : []),
+            ...(slots.some((slot) => slot.page !== Math.floor((slot.slot - 1) / questionsPerPage) + 1)
+              ? ['custom_quiz_page_breaks_not_portable'] : []),
+            ...((Number(activity.completionattemptsexhausted ?? 0) > 0
+              || Number(activity.completionminattempts ?? 0) > 0)
+              ? ['quiz_custom_completion_not_exported'] : [])
+          ];
+          module.authoring_completeness = losses.some((loss) =>
+            ['unsupported_questions_not_exported', 'quiz_slot_question_not_exported'].includes(loss))
+            ? 'selected' : 'complete';
+          module.authoring = {
+            kind: 'quiz',
+            settings: {
+              time_open: Number(activity.timeopen ?? 0),
+              time_close: Number(activity.timeclose ?? 0),
+              time_limit_seconds: Number(activity.timelimit ?? 0),
+              overdue_handling: String(activity.overduehandling ?? 'autosubmit'),
+              grace_period_seconds: Number(activity.graceperiod ?? 0),
+              preferred_behaviour: String(activity.preferredbehaviour ?? 'deferredfeedback'),
+              can_redo_questions: Boolean(activity.canredoquestions),
+              attempts: Number(activity.attempts ?? 0),
+              attempt_on_last: Boolean(activity.attemptonlast),
+              grade_method: ({ 1: 'highest', 2: 'average', 3: 'first', 4: 'last' })[
+                Number(activity.grademethod ?? 1)
+              ] ?? 'highest',
+              decimal_points: Number(activity.decimalpoints ?? 2),
+              question_decimal_points: Number(activity.questiondecimalpoints ?? -1),
+              questions_per_page: questionsPerPage,
+              navigation_method: String(activity.navmethod ?? 'free'),
+              shuffle_answers: Boolean(activity.shuffleanswers),
+              grade: Number(activity.grade ?? 10),
+              network_address: String(activity.subnet ?? ''),
+              browser_security: ({ '-': 'none', popup: 'popup', securewindow: 'securewindow' })[
+                String(activity.browsersecurity ?? '-')
+              ] ?? 'none',
+              delay_first_second_seconds: Number(activity.delay1 ?? 0),
+              delay_later_seconds: Number(activity.delay2 ?? 0),
+              show_user_picture: ({ 0: 'none', 1: 'small', 2: 'large' })[
+                Number(activity.showuserpicture ?? 0)
+              ] ?? 'none',
+              show_blocks: Boolean(activity.showblocks),
+              allow_offline_attempts: Boolean(activity.allowofflineattempts)
+            },
+            blueprint,
+            slots,
+            losses
+          };
+          return;
+        }
         if (module.module_type === 'data') {
           const fields = await this.client.callOperation('get_data_fields', {
             course_id: courseId,
@@ -730,6 +826,9 @@ export class MoodliaMoodleAdapter {
     const databaseFieldWriteAllowed = evidence.database_field_manage === true && activityWriteAllowed;
     const feedbackItemWriteAllowed = evidence.feedback_item_manage === true && activityWriteAllowed;
     const completionWriteAllowed = evidence.completion_manage === true;
+    const quizWriteAllowed = evidence.quiz_manage === true
+      && evidence.question_manage === true
+      && activityWriteAllowed;
     return {
       course_create: {
         available: this.hasDeclaredOperation('create_course') && courseCreateAllowed,
@@ -852,6 +951,18 @@ export class MoodliaMoodleAdapter {
           'required_modules', 'require_all_activities',
           'required_course_grade_percent', 'criteria_aggregation'
         ]
+      },
+      quiz_questions_import: {
+        available: this.hasDeclaredOperation('import_question_bank_blueprint') && quizWriteAllowed,
+        supported_fields: ['blueprint']
+      },
+      quiz_slot_create: {
+        available: this.hasDeclaredOperation('add_question_to_quiz') && quizWriteAllowed,
+        supported_fields: ['source_question_id', 'slot']
+      },
+      quiz_slot_update: {
+        available: this.hasDeclaredOperation('update_quiz_question_slot') && quizWriteAllowed,
+        supported_fields: ['slot', 'max_mark']
       }
     };
   }
@@ -1135,6 +1246,42 @@ export class MoodliaMoodleAdapter {
         ...(action.fields.required_course_grade_percent === undefined ? {}
           : { required_course_grade_percent: action.fields.required_course_grade_percent }),
         criteria_aggregation: action.fields.criteria_aggregation
+      });
+    }
+    if (action.kind === 'quiz_questions.import') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      return this.client.callOperation('import_question_bank_blueprint', {
+        course_id: courseId,
+        blueprint_json: JSON.stringify(action.fields.blueprint),
+        bank_scope: 'quiz_private',
+        quiz_module_id: Number(moduleId),
+        create_categories: true
+      });
+    }
+    if (action.kind === 'quiz_slot.create') {
+      const createdModule = createdEntities.get(`modules:${action.parent_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      const imported = createdEntities.get(`question_imports:${action.question_import_source_key}`);
+      const createdQuestions = parseArray(imported?.created_questions_json);
+      const question = createdQuestions[Number(action.fields.source_question_id) - 1];
+      const questionId = Number(question?.question_id ?? question?.id ?? 0);
+      if (!Number.isInteger(questionId) || questionId <= 0) {
+        throw new TypeError(`Cannot resolve imported Quiz question ${action.fields.source_question_id}.`);
+      }
+      return this.client.callOperation('add_question_to_quiz', {
+        quiz_module_id: Number(moduleId),
+        question_id: questionId,
+        slot: action.fields.slot
+      });
+    }
+    if (action.kind === 'quiz_slot.update') {
+      const createdModule = createdEntities.get(`modules:${action.module_source_key}`);
+      const moduleId = action.target_module_id ?? createdModule?.module_id;
+      return this.client.callOperation('update_quiz_question_slot', {
+        quiz_module_id: Number(moduleId),
+        slot: action.fields.slot,
+        max_mark: action.fields.max_mark
       });
     }
     if (action.kind === 'question_bank.import') {

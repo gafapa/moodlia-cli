@@ -365,6 +365,90 @@ test('question-bank import resolves a newly created bank without exposing source
   assert.deepEqual(JSON.parse(operations[0].parameters.blueprint_json), blueprint);
 });
 
+test('MoodlIA export normalizes a Quiz private bank and slot identities', async () => {
+  const client = {
+    async callOperation(name) {
+      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_contents') return { sections: [{
+        section_id: 10, section_number: 0, name: 'General', summary: '', summary_files: [],
+        modules: [{ module_id: 20, instance_id: 30, module_type: 'quiz', name: 'Quiz', visible: true }]
+      }] };
+      if (name === 'get_groups') return { groups: [] };
+      if (name === 'get_groupings') return { groupings: [] };
+      if (name === 'get_course_assignments') return { assignments: [] };
+      if (name === 'get_course_completion_criteria') return { course_completion_enabled: false };
+      if (name === 'get_module_details') return { extra_json: JSON.stringify({ activity: {
+        questionsperpage: 1, grademethod: 1, grade: 10, browsersecurity: '-', showuserpicture: 0
+      } }) };
+      if (name === 'export_question_bank_blueprint') return {
+        skipped_question_count: 0,
+        blueprint_json: JSON.stringify({
+          schema: 'moodlia.question_bank_blueprint.v1', bank_scope: 'quiz_private',
+          categories: [{
+            source_category_id: 400, source_parent_id: 0, name: 'Private',
+            questions: [{
+              source_question_id: 900, question_type: 'truefalse', name: 'Earth',
+              question_text: '<p>Round?</p>', options: { correct_answer: true }
+            }]
+          }]
+        })
+      };
+      if (name === 'get_quiz_questions') return { questions: [{
+        slot: 1, question_id: 900, page: 1, maxmark: 2
+      }] };
+      throw new Error(`Unexpected operation ${name}`);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://source.example', moodle_version: '5.3',
+    plugin_version: '0.1.211', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(7);
+  const quiz = exported.sections[0].modules[0];
+  assert.equal(quiz.authoring_completeness, 'complete');
+  assert.equal(quiz.authoring.blueprint.categories[0].questions[0].source_question_id, 1);
+  assert.deepEqual(quiz.authoring.slots, [{ source_question_id: 1, slot: 1, page: 1, max_mark: 2 }]);
+  assert.ok(quiz.authoring.losses.includes('quiz_review_and_access_configuration_not_exported'));
+});
+
+test('Quiz definition actions resolve imported questions without source Moodle ids', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      if (name === 'import_question_bank_blueprint') {
+        return { created_questions_json: JSON.stringify([{ question_id: 700 }]) };
+      }
+      if (name === 'add_question_to_quiz') return { slot_id: 800, slot: 1, question_id: 700 };
+      return { updated: true, slot: 1, maxmark: 2 };
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  const createdEntities = new Map([['modules:module:20', { module_id: 80 }]]);
+  const imported = await adapter.applySyncAction({
+    kind: 'quiz_questions.import', parent_source_key: 'module:20',
+    fields: { blueprint: { schema: 'moodlia.question_bank_blueprint.v1', categories: [] } }
+  }, { courseId: 8, createdEntities });
+  createdEntities.set('question_imports:quiz-questions:module:20', imported);
+  await adapter.applySyncAction({
+    kind: 'quiz_slot.create', parent_source_key: 'module:20',
+    question_import_source_key: 'quiz-questions:module:20',
+    fields: { source_question_id: 1, slot: 1 }
+  }, { courseId: 8, createdEntities });
+  await adapter.applySyncAction({
+    kind: 'quiz_slot.update', module_source_key: 'module:20',
+    fields: { slot: 1, max_mark: 2 }
+  }, { courseId: 8, createdEntities });
+  assert.deepEqual(operations.map((entry) => entry.name), [
+    'import_question_bank_blueprint', 'add_question_to_quiz', 'update_quiz_question_slot'
+  ]);
+  assert.equal(operations[0].parameters.bank_scope, 'quiz_private');
+  assert.equal(operations[1].parameters.question_id, 700);
+  assert.equal(operations[1].parameters.quiz_module_id, 80);
+  assert.equal(operations[2].parameters.max_mark, 2);
+});
+
 test('MoodlIA export normalizes Database fields and Feedback item dependencies', async () => {
   const client = {
     async callOperation(name, parameters = {}) {
