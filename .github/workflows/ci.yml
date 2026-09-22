@@ -25,7 +25,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Install Core package dependencies
         working-directory: moodle-core-cli
-        run: npm ci --ignore-scripts
+        run: npm ci
       - name: Install preview Core dependency
         working-directory: moodlia-cli
         run: |
