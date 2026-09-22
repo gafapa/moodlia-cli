@@ -1,8 +1,8 @@
 # Adaptive Moodle Clients and Cross-Site Synchronization
 
-Status: implementation in progress. P0-P2 and P4-P8 are implemented for the verified preview scope. P3 now includes adaptive/Core audit, progress, completion and add-only enrolment workflows plus grouped lifecycle and explicit provider namespaces. P9 has the 100-scenario logical matrix and the supported-branch plugin matrix; disposable end-to-end source/target qualification and the final P10 release gate remain open.
+Status: release candidate. P0-P8 are implemented for the verified preview scope, P3 includes adaptive/Core audit, progress, completion and add-only enrolment workflows plus grouped lifecycle and explicit provider namespaces, and P9 is closed: the 100-scenario logical matrix, the supported-branch plugin matrix, and the disposable end-to-end source/target qualification (Moodle 4.5.12 to 5.3beta, all four provider pairings, run `release037-core036-final`) have passed with public packages. P10 publication of `moodlia@0.3.7`, `moodle-core-cli@0.3.6`, and plugin `0.1.213` closes the gate.
 
-Date: 2026-09-21.
+Date: 2026-09-22.
 
 Canonical planning document: `moodlia-cli/docs/UNIFICATION-AND-SYNC-PLAN.md`.
 
@@ -10,7 +10,7 @@ Canonical planning document: `moodlia-cli/docs/UNIFICATION-AND-SYNC-PLAN.md`.
 
 The shared Core-owned engine, adaptive MoodlIA client, persistent synchronization state, immutable planning, recovery, and separate MCP coordinator are implemented. The current verified preview includes course metadata and hidden course creation; sections; groups and groupings; portable Page, Label, URL, resource, folder, Book, assignment, Workshop, Database, Feedback, Quiz, Lesson, question-bank, completion, and selected gradebook configuration; owner-scoped assets; and internal-link rewriting. Core and adaptive CLIs also expose evidence-based course audit, progress reporting, and digest-bound add-only manual-enrolment workflows. Unsupported or lossy fields remain plan gaps and require an explicit registered degradation where one exists.
 
-The remaining release work is deliberately separate: disposable end-to-end source/target qualification, lower-priority provider-specific workflow promotion where Moodle exposes a verified API, coordinated `0.3.1` publication, and any separately authorized plugin deployment. Clean tarball installation, the 100-scenario logical matrix, the supported-branch plugin matrix, English documentation, and skill propagation have been verified. No production course synchronization is implied by this checkpoint.
+The disposable end-to-end qualification between Moodle 4.5.12 and 5.3beta has now been executed for Core-to-Core, Core-to-MoodlIA, MoodlIA-to-Core, and MoodlIA-to-MoodlIA with public packages, and its evidence and documented gaps are recorded in `moodle-core-cli/docs/CROSS-VERSION-QUALIFICATION.md`. It exposed and fixed real defects (SQLite lifecycle, grouped resume routing, section identity, Moodle 5.3 summary wrappers, plugin file URLs and service permissions, `@@PLUGINFILE@@` canonicalization, and result identifier selection). Remaining work is lower-priority provider-specific workflow promotion where Moodle exposes a verified API and any separately authorized plugin deployment. Clean registry installation, the 100-scenario logical matrix, the supported-branch plugin matrix, English documentation, and skill propagation have been verified. No production course synchronization is implied by this checkpoint.
 
 ## 1. Outcome and scope
 
