@@ -1,6 +1,6 @@
 {
   "name": "moodlia",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Command-line and Node client for MoodlIA Moodle automation over REST.",
   "type": "module",
   "license": "GPL-3.0-or-later",

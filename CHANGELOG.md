@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.7 - 2026-09-22
+
+- Normalize authenticated `/webservice/pluginfile.php/` editor URLs without
+  leaving a source-site prefix before `@@PLUGINFILE@@`.
+
 ## 0.3.6 - 2026-09-22
 
 - Require Core 0.3.5 so synchronization gaps retain the blocked source module type.

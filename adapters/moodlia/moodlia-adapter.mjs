@@ -206,13 +206,15 @@ function normalizeEditorContent(contentValue, rawFiles) {
     try {
       const sourceUrl = new URL(file.url);
       const regularPath = sourceUrl.pathname.replace('/webservice/pluginfile.php/', '/pluginfile.php/');
-      const webservicePath = sourceUrl.pathname.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
+      const webservicePath = sourceUrl.pathname.includes('/webservice/pluginfile.php/')
+        ? sourceUrl.pathname
+        : sourceUrl.pathname.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
       const replacement = `@@PLUGINFILE@@${file.filepath}${file.filename}`.replace('//', '/');
       for (const reference of [
-        new URL(regularPath, sourceUrl.origin).toString(),
         new URL(webservicePath, sourceUrl.origin).toString(),
-        regularPath,
-        webservicePath
+        new URL(regularPath, sourceUrl.origin).toString(),
+        webservicePath,
+        regularPath
       ]) content = content.split(reference).join(replacement);
     } catch {
       // Invalid asset URLs remain visible to planner verification instead of being fetched.
