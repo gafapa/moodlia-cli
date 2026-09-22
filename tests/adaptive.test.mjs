@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -727,4 +730,27 @@ test('CLI documents grouped synchronization lifecycle aliases', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /sync resume --job-id/);
   assert.match(result.stdout, /sync verify --plan-id/);
+});
+
+test('grouped adaptive resume maps job-id to one lifecycle mode', () => {
+  const cli = fileURLToPath(new URL('../cli/moodlia.mjs', import.meta.url));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'moodlia-grouped-sync-'));
+  try {
+    const result = spawnSync(process.execPath, [
+      cli, 'sync', 'resume', '--job-id', 'missing-job',
+      '--plan-digest', 'sha256:missing', '--allow-write',
+      '--state', path.join(directory, 'state.sqlite')
+    ], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Unknown sync job/);
+    assert.doesNotMatch(result.stderr, /cannot be combined/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('adaptive CLI awaits asynchronous sync work before closing durable state', () => {
+  const source = fs.readFileSync(path.resolve('cli/adaptive-commands.mjs'), 'utf8');
+  assert.doesNotMatch(source, /return engine\.(?:apply|verify)\(/);
+  assert.equal((source.match(/return await engine\.(?:apply|verify)\(/g) ?? []).length, 3);
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 - 2026-09-22
+
+- Keep the durable SQLite state store open until asynchronous apply, resume, and verification operations settle.
+- Require the Core 0.3.2 lifecycle and resume-reconciliation fixes and add a regression guard for adaptive synchronization.
+- Map grouped resume, verify, and cancel identifiers without leaving conflicting lifecycle options behind.
+
 ## 0.3.1 - 2026-09-22
 
 - Add explicit in-process `moodlia core` and `moodlia plugin` namespaces.

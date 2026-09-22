@@ -199,10 +199,10 @@ export async function runAdaptiveCourseSync(options, contract) {
       }
       const targetAdapter = adaptiveAdapter(resolvedProfile(options, targetName), contract, { allowWrite: resuming });
       if (verifying) {
-        return engine.verify({ planId, targetAdapter, jobId: options.verify_job_id });
+        return await engine.verify({ planId, targetAdapter, jobId: options.verify_job_id });
       }
       if (!allowWrite) throw new MoodleClientError('permission_denied', 'Resuming a job requires --allow-write.');
-      return engine.apply({
+      return await engine.apply({
         planId,
         planDigest: requiredOption(options, 'plan_digest'),
         resumeJobId: job.job_id,
@@ -238,7 +238,7 @@ export async function runAdaptiveCourseSync(options, contract) {
         throw new MoodleClientError('invalid_parameters', 'The plan does not identify both site profiles.');
       }
       store.savePlan(plan);
-      return engine.apply({
+      return await engine.apply({
         planId: plan.plan_id,
         planDigest: requiredOption(options, 'plan_digest'),
         sourceAdapter: adaptiveAdapter(resolvedProfile(options, sourceName), contract),
