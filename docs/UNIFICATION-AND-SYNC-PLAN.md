@@ -32,7 +32,7 @@ The following baseline was read from the local repositories. It describes source
 | --- | --- | --- |
 | `moodle-core-cli` | `0.2.0`, commit `a8e3f8e`, 788 contracted operations | Static Core operation catalog, REST client, CLI, generated types, version checks and client policies |
 | `moodlia-cli` / npm `moodlia` | `0.2.7`, commit `a9a42fc`, 245 contracted operations | REST client and CLI for `local_moodlia_*`; native editor uploads and UTF-8 content-file options |
-| `moodlia-moodle-plugin` | `0.1.208`, commit `01d81dc` | Advanced PHP operations, REST adapters and Moodle-hosted MCP |
+| `moodlia-moodle-plugin` | `0.1.208`, commit `01d81dc` (qualified release: `0.1.213`, commit `117992c`) | Advanced PHP operations, REST adapters and Moodle-hosted MCP |
 | `moodlia-skills` | Existing independent repository | Agent instructions for operation and portable content |
 | Version scope | 4.5, 5.0, 5.1, 5.2, preliminary 5.3 beta | Each capability needs branch-specific evidence |
 
