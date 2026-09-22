@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 - 2026-09-22
+
+- Require Core 0.3.5 so synchronization gaps retain the blocked source module type.
+
 ## 0.3.5 - 2026-09-22
 
 - Preserve the destination course context when adding synchronized groups to MoodlIA groupings.

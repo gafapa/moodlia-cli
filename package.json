@@ -1,6 +1,6 @@
 {
   "name": "moodlia",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Command-line and Node client for MoodlIA Moodle automation over REST.",
   "type": "module",
   "license": "GPL-3.0-or-later",
@@ -67,7 +67,7 @@
     "node": ">=22.13"
   },
   "dependencies": {
-    "moodle-core-cli": "^0.3.4"
+    "moodle-core-cli": "^0.3.5"
   },
   "publishConfig": {
     "access": "public",
