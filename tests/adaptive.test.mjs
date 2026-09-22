@@ -240,7 +240,12 @@ test('MoodlIA export produces portable section and assignment editor manifests',
   };
   const client = {
     async callOperation(name) {
-      if (name === 'get_course_details') return { course_id: 7, fullname: 'Course', shortname: 'COURSE' };
+      if (name === 'get_course_details') return {
+        course_id: 7,
+        fullname: 'Course',
+        shortname: 'COURSE',
+        summary: '<div class="no-overflow"><p>Portable summary</p></div>'
+      };
       if (name === 'get_course_contents') return {
         sections: [{
           section_id: 10, section_number: 0, name: 'General', visible: true,
@@ -299,6 +304,7 @@ test('MoodlIA export produces portable section and assignment editor manifests',
     plugin_version: '0.1.211', operations: [], functions: []
   };
   const exported = await adapter.exportCourse(7);
+  assert.equal(exported.course.summary, '<p>Portable summary</p>');
   assert.equal(exported.sections[0].summary, '<img src="@@PLUGINFILE@@/section.jpg">');
   assert.equal(exported.sections[0].files[0].sha256.length, 64);
   assert.equal(exported.sections[0].modules[0].authoring.content.intro_files[0].sha256.length, 64);

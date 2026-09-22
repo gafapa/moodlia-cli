@@ -221,6 +221,15 @@ function normalizeEditorContent(contentValue, rawFiles) {
   return { content, files };
 }
 
+function normalizeRenderedCourseSummary(course) {
+  if (course.summary_raw !== undefined && course.summary_raw !== null) {
+    return String(course.summary_raw);
+  }
+  const summary = String(course.summary ?? '');
+  const overflowWrapper = /^<div class="no-overflow">([\s\S]*)<\/div>$/;
+  return summary.match(overflowWrapper)?.[1] ?? summary;
+}
+
 function normalizeChapterContent(chapter) {
   return { ...chapter, ...normalizeEditorContent(chapter.content, chapter.files) };
 }
@@ -911,7 +920,7 @@ export class MoodliaMoodleAdapter {
     };
     return createCourseSyncModel({
       site,
-      course,
+      course: { ...course, summary: normalizeRenderedCourseSummary(course) },
       sections,
       groups: groupsResult.value.groups ?? [],
       groupings: groupingsResult.value.groupings ?? [],

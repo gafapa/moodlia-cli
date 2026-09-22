@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 - 2026-09-22
+
+- Normalize Moodle's rendered course-summary overflow wrapper back to portable authoring HTML.
+- Require the Core 0.3.3 section-identity verification fix discovered by live Core-to-MoodlIA qualification.
+
 ## 0.3.2 - 2026-09-22
 
 - Keep the durable SQLite state store open until asynchronous apply, resume, and verification operations settle.
