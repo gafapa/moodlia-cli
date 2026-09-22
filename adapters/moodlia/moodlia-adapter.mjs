@@ -1196,6 +1196,7 @@ export class MoodliaMoodleAdapter {
         throw new TypeError(`Cannot resolve grouping membership targets for ${action.source_key}.`);
       }
       return this.client.callOperation('add_group_to_grouping', {
+        course_id: courseId,
         grouping_id: groupingId,
         group_id: groupId
       });

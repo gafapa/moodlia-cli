@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 - 2026-09-22
+
+- Preserve the destination course context when adding synchronized groups to MoodlIA groupings.
+
 ## 0.3.4 - 2026-09-22
 
 - Require the Core 0.3.4 Moodle 5.3 course-summary normalization discovered by live MoodlIA-to-Core qualification.

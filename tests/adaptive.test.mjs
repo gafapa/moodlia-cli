@@ -91,6 +91,33 @@ test('adaptive adapter routes binary sync work through the selected MoodlIA capa
   assert.deepEqual(calls, [['download', 'file.pdf'], ['stage'], ['replace'], ['book']]);
 });
 
+test('MoodlIA grouping membership keeps the destination course context', async () => {
+  const operations = [];
+  const client = {
+    async callOperation(name, parameters) {
+      operations.push({ name, parameters });
+      return { added: true };
+    }
+  };
+  const moodlia = createMoodliaMoodleAdapter({ client });
+  const createdEntities = new Map([
+    ['groups:group:1', { group_id: 21 }],
+    ['groupings:grouping:1', { grouping_id: 34 }]
+  ]);
+
+  await moodlia.applySyncAction({
+    kind: 'grouping.member.add',
+    source_key: 'grouping:1:group:1',
+    group_source_key: 'group:1',
+    grouping_source_key: 'grouping:1'
+  }, { courseId: 8, createdEntities });
+
+  assert.deepEqual(operations, [{
+    name: 'add_group_to_grouping',
+    parameters: { course_id: 8, grouping_id: 34, group_id: 21 }
+  }]);
+});
+
 test('Book chapter assets share one draft and publish once', async () => {
   const uploads = [];
   const operations = [];
