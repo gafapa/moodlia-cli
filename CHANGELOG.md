@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4 - 2026-09-22
+
+- Require the Core 0.3.4 Moodle 5.3 course-summary normalization discovered by live MoodlIA-to-Core qualification.
+
 ## 0.3.3 - 2026-09-22
 
 - Normalize Moodle's rendered course-summary overflow wrapper back to portable authoring HTML.
