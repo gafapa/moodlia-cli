@@ -205,22 +205,66 @@ function normalizeEditorContent(contentValue, rawFiles) {
   for (const file of files) {
     try {
       const sourceUrl = new URL(file.url);
-      const regularPath = sourceUrl.pathname.replace('/webservice/pluginfile.php/', '/pluginfile.php/');
-      const webservicePath = sourceUrl.pathname.includes('/webservice/pluginfile.php/')
-        ? sourceUrl.pathname
-        : sourceUrl.pathname.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
-      const replacement = `@@PLUGINFILE@@${file.filepath}${file.filename}`.replace('//', '/');
-      for (const reference of [
-        new URL(webservicePath, sourceUrl.origin).toString(),
-        new URL(regularPath, sourceUrl.origin).toString(),
-        webservicePath,
-        regularPath
-      ]) content = content.split(reference).join(replacement);
+      const relativePath = `${file.filepath}${file.filename}`.replace('//', '/');
+      const replacement = `@@PLUGINFILE@@${encodePluginfilePath(relativePath)}`;
+      const references = new Set();
+      for (const pathname of pluginfilePathVariants(sourceUrl.pathname, relativePath)) {
+        const regularPath = pathname.replace('/webservice/pluginfile.php/', '/pluginfile.php/');
+        const webservicePath = pathname.includes('/webservice/pluginfile.php/')
+          ? pathname
+          : pathname.replace('/pluginfile.php/', '/webservice/pluginfile.php/');
+        for (const candidate of [webservicePath, regularPath]) {
+          references.add(`${sourceUrl.origin}${candidate}`);
+          references.add(candidate);
+        }
+      }
+      for (const relativeVariant of relativePathVariants(relativePath)) {
+        references.add(`@@PLUGINFILE@@${relativeVariant}`);
+      }
+      for (const reference of [...references].sort((left, right) => right.length - left.length)) {
+        if (reference !== replacement) content = content.split(reference).join(replacement);
+      }
     } catch {
       // Invalid asset URLs remain visible to planner verification instead of being fetched.
     }
   }
   return { content, files };
+}
+
+// Moodle's editors store `@@PLUGINFILE@@` references with rawurlencoded path
+// segments, while `file_rewrite_pluginfile_urls()` keeps whatever form was
+// stored. Both encoded and decoded forms therefore appear in rendered HTML.
+function encodePluginfileSegment(segment) {
+  return encodeURIComponent(segment)
+    .replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function encodePluginfilePath(relativePath) {
+  return relativePath.split('/').map(encodePluginfileSegment).join('/');
+}
+
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function relativePathVariants(relativePath) {
+  return new Set([relativePath, encodePluginfilePath(relativePath), encodeURI(relativePath)]);
+}
+
+function pluginfilePathVariants(pathname, relativePath) {
+  const variants = new Set([pathname, safeDecode(pathname)]);
+  const decodedPathname = safeDecode(pathname);
+  if (decodedPathname.endsWith(relativePath)) {
+    const prefix = decodedPathname.slice(0, -relativePath.length);
+    for (const relativeVariant of relativePathVariants(relativePath)) {
+      variants.add(`${prefix}${relativeVariant}`);
+    }
+  }
+  return variants;
 }
 
 function normalizeRenderedCourseSummary(course) {

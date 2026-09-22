@@ -355,12 +355,64 @@ test('MoodlIA export produces portable section and assignment editor manifests',
   assert.equal(exported.sections[0].modules[1].authoring.blueprint.categories[0].questions[0].source_question_id, 1);
   assert.equal(
     exported.sections[0].modules[2].authoring.settings.content,
-    '<img src="@@PLUGINFILE@@/hero ünicode.png">'
+    '<img src="@@PLUGINFILE@@/hero%20%C3%BCnicode.png">'
   );
   assert.equal(exported.sections[0].modules[2].authoring.files[0].sha256.length, 64);
   assert.equal(exported.course_completion.required_modules[0].source_key, 'module:20');
   assert.equal(exported.course_completion.required_course_grade_percent, 80);
   assert.deepEqual(exported.assets.map((asset) => asset.owner.file_area), ['section', 'intro', 'content']);
+});
+
+test('MoodlIA export canonicalizes decoded and pre-normalized plugin file references', async () => {
+  const pageFile = {
+    filename: 'hero ünicode.png', filepath: '/nested (v2)/', filesize: 2, mimetype: 'image/png',
+    content_hash: 'page-hash',
+    url: 'https://target.example/webservice/pluginfile.php/16/mod_page/content/2/nested%20(v2)/hero%20%C3%BCnicode.png'
+  };
+  const client = {
+    async callOperation(name) {
+      if (name === 'get_course_details') return {
+        course: { id: 3, fullname: 'Target', shortname: 'TARGET', category_id: 1, summary: '', summary_format: 1, visible: true, start_date: 0, end_date: 0 }
+      };
+      if (name === 'get_course_contents') return {
+        sections: [{
+          section_id: 30, section_number: 0, name: 'General', summary: '', summary_format: 1, visible: true,
+          modules: [{ module_id: 40, name: 'Portable Page', module_type: 'page', visible: true }]
+        }]
+      };
+      if (name === 'get_module_details') return {
+        extra_json: JSON.stringify({ activity: {
+          content: [
+            '<img src="https://target.example/webservice/pluginfile.php/16/mod_page/content/2/nested (v2)/hero ünicode.png">',
+            '<img src="/pluginfile.php/16/mod_page/content/2/nested%20(v2)/hero%20%C3%BCnicode.png">',
+            '<img src="@@PLUGINFILE@@/nested (v2)/hero ünicode.png">',
+            '<img src="@@PLUGINFILE@@/nested%20%28v2%29/hero%20%C3%BCnicode.png">'
+          ].join(''),
+          content_format: 1,
+          print_intro: false,
+          print_last_modified: false,
+          files: [pageFile]
+        } })
+      };
+      throw new Error(`Unexpected operation ${name}`);
+    },
+    async downloadFile() {
+      return new Uint8Array([4, 5]);
+    }
+  };
+  const adapter = createMoodliaMoodleAdapter({ client });
+  adapter.discovery = {
+    provider: 'moodlia', site_url: 'https://target.example', moodle_version: '5.3',
+    plugin_version: '0.1.213', operations: [], functions: []
+  };
+  const exported = await adapter.exportCourse(3);
+  const page = exported.sections[0].modules[0];
+  assert.equal(
+    page.authoring.settings.content,
+    '<img src="@@PLUGINFILE@@/nested%20%28v2%29/hero%20%C3%BCnicode.png">'.repeat(4)
+  );
+  assert.equal(page.authoring.files[0].filepath, '/nested (v2)/');
+  assert.equal(page.authoring.files[0].filename, 'hero ünicode.png');
 });
 
 test('assignment grading-definition actions use the canonical wrapped payloads', async () => {

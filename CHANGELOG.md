@@ -4,6 +4,12 @@
 
 - Normalize authenticated `/webservice/pluginfile.php/` editor URLs without
   leaving a source-site prefix before `@@PLUGINFILE@@`.
+- Canonicalize `@@PLUGINFILE@@` references to rawurlencoded path segments and
+  recognize both encoded and decoded rendered asset URLs, so content written to
+  a destination reads back identically during verification.
+- Require Core 0.3.6 so module creation results that echo `grouping_id: 0`
+  verify by `module_id` and record their binding mapping; live MoodlIA-to-MoodlIA
+  qualification on Moodle 4.5 to 5.3 discovered both defects.
 
 ## 0.3.6 - 2026-09-22
 
