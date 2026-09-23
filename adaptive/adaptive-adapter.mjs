@@ -1,4 +1,4 @@
-import { contentDigest } from 'moodle-core-cli/sync';
+import { contentDigest } from 'moodle-core-cli/canonical';
 
 function safeError(error) {
   return {

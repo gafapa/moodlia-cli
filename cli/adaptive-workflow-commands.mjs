@@ -1,7 +1,12 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { contentDigest } from 'moodle-core-cli/canonical';
+import {
+  booleanOption,
+  positiveIntegerOption,
+  readJsonFile,
+  requiredOption,
+  writeNewJsonFile
+} from 'moodle-core-cli/cli-options';
 import { loadProfiles, resolveProfile } from 'moodle-core-cli/profiles';
-import { contentDigest } from 'moodle-core-cli/sync';
 import {
   applyManualEnrolmentSync,
   auditCourseCompletion,
@@ -15,37 +20,20 @@ import { MoodleClientError } from '../client/moodle-rest-client.mjs';
 
 const DEFAULT_CONFIG = '.moodle-profiles.json';
 
+const cliErrors = Object.freeze({
+  validation: (message, details = {}, cause = null) => new MoodleClientError('invalid_parameters', message, details, cause)
+});
+
 function required(options, name) {
-  const value = options[name];
-  if (value === undefined || value === true || String(value).trim() === '') {
-    throw new MoodleClientError('invalid_parameters', `--${name.replaceAll('_', '-')} is required.`, { parameter: name });
-  }
-  return String(value);
+  return requiredOption(options, name, cliErrors);
 }
 
 function positiveInteger(options, name, fallback) {
-  const value = options[name] === undefined ? fallback : Number(options[name]);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new MoodleClientError('invalid_parameters', `--${name.replaceAll('_', '-')} must be a positive integer.`);
-  }
-  return value;
+  return positiveIntegerOption(options, name, { fallback, errors: cliErrors });
 }
 
-function booleanOption(options, name) {
-  const value = options[name];
-  if (value === undefined) return false;
-  if (value === true || value === 'true' || value === '1') return true;
-  if (value === false || value === 'false' || value === '0') return false;
-  throw new MoodleClientError('invalid_parameters', `--${name.replaceAll('_', '-')} must be true or false.`);
-}
-
-function readJson(filePath, label) {
-  const resolved = path.resolve(String(filePath));
-  try {
-    return JSON.parse(fs.readFileSync(resolved, 'utf8').replace(/^\uFEFF/, ''));
-  } catch (error) {
-    throw new MoodleClientError('invalid_parameters', `Unable to read ${label}: ${resolved}`, { file_path: resolved }, error);
-  }
+function booleanFlag(options, name) {
+  return booleanOption(options, name, cliErrors);
 }
 
 function siteAdapter(options, contract, allowWrite = false) {
@@ -140,7 +128,7 @@ export async function runAdaptiveCourseCompletionAudit(options, contract) {
       provider: 'moodlia',
       data: await adapter.adapters.moodlia.client.callOperation('audit_course_completion', {
         course_id: courseId,
-        include_ok: booleanOption(options, 'include_ok')
+        include_ok: booleanFlag(options, 'include_ok')
       })
     };
   }
@@ -154,8 +142,8 @@ export async function runAdaptiveCourseCompletionAudit(options, contract) {
 }
 
 export async function runAdaptiveCourseCompletionRepair(options, contract) {
-  const allowWrite = booleanOption(options, 'allow_write');
-  const confirmed = booleanOption(options, 'yes');
+  const allowWrite = booleanFlag(options, 'allow_write');
+  const confirmed = booleanFlag(options, 'yes');
   if (allowWrite && !confirmed) {
     throw new MoodleClientError('permission_denied', 'Applying a completion repair requires --allow-write and --yes.');
   }
@@ -171,7 +159,7 @@ export async function runAdaptiveCourseCompletionRepair(options, contract) {
         course_id: courseId,
         mode,
         dry_run: !allowWrite,
-        reset_completion_states: allowWrite && booleanOption(options, 'reset_completion_states')
+        reset_completion_states: allowWrite && booleanFlag(options, 'reset_completion_states')
       })
     };
   }
@@ -213,10 +201,10 @@ async function planMoodliaEnrolments(client, courseId, desired) {
 
 export async function runAdaptiveEnrolmentSync(options, contract) {
   if (options.apply_plan !== undefined) {
-    if (!booleanOption(options, 'allow_write') || !booleanOption(options, 'yes')) {
+    if (!booleanFlag(options, 'allow_write') || !booleanFlag(options, 'yes')) {
       throw new MoodleClientError('permission_denied', 'Applying an enrolment plan requires --allow-write and --yes.');
     }
-    const outer = readJson(required(options, 'apply_plan'), 'enrolment plan');
+    const outer = readJsonFile(required(options, 'apply_plan'), 'enrolment plan', cliErrors);
     const { digest, ...unsigned } = outer;
     const expected = contentDigest(unsigned);
     if (digest !== expected || required(options, 'plan_digest') !== expected) {
@@ -253,7 +241,7 @@ export async function runAdaptiveEnrolmentSync(options, contract) {
   }
 
   const courseId = positiveInteger(options, 'course_id');
-  const desired = readJson(required(options, 'desired_file'), 'desired enrolments');
+  const desired = readJsonFile(required(options, 'desired_file'), 'desired enrolments', cliErrors);
   if (!Array.isArray(desired) || desired.length === 0) {
     throw new MoodleClientError('invalid_parameters', 'Desired enrolments must be a non-empty array.');
   }
@@ -279,10 +267,7 @@ export async function runAdaptiveEnrolmentSync(options, contract) {
   };
   const plan = { ...unsigned, digest: contentDigest(unsigned) };
   if (options.plan_file !== undefined) {
-    const outputPath = path.resolve(required(options, 'plan_file'));
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(outputPath, `${JSON.stringify(plan, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-    return { ...plan, plan_path: outputPath };
+    return { ...plan, plan_path: writeNewJsonFile(required(options, 'plan_file'), plan) };
   }
   return plan;
 }
