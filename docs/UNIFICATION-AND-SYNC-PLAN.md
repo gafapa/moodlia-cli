@@ -1,5 +1,11 @@
 # Adaptive Moodle Clients and Cross-Site Synchronization
 
+> **Superseded in part (2026-09-24).** The synchronization engine no longer lives in
+> `moodle-core-cli`, and the `moodlia-sync-mcp` coordinator is retired. Both moved
+> to the standalone `moodlia-sync` CLI (`moodle-core-cli` ← `moodlia` ←
+> `moodlia-sync`). Sections below that place the engine in Core or describe the
+> MCP coordinator are historical; see `moodlia-sync/docs/ADR-001-SYNC-FOUNDATION.md`.
+
 Status: release candidate. P0-P8 are implemented for the verified preview scope, P3 includes adaptive/Core audit, progress, completion and add-only enrolment workflows plus grouped lifecycle and explicit provider namespaces, and P9 is closed: the 100-scenario logical matrix, the supported-branch plugin matrix, and the disposable end-to-end source/target qualification (Moodle 4.5.12 to 5.3beta, all four provider pairings, run `release037-core036-final`) have passed with public packages. P10 publication of `moodlia@0.3.7`, `moodle-core-cli@0.3.6`, and plugin `0.1.213` closes the gate.
 
 Date: 2026-09-22.

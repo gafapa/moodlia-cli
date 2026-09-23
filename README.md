@@ -1,10 +1,8 @@
 # MoodlIA CLI
 
-## Adaptive Moodle profiles and synchronization
+## Adaptive Moodle profiles
 
 MoodlIA 0.3 adds an adaptive path alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
-
-Typed section, Page, Text and media, URL, Book, and assignment updates preserve destination identities. Native editor files are grouped by owner and file area, staged as one Moodle draft, and synchronized with portable `@@PLUGINFILE@@` references.
 
 ```json
 {
@@ -22,10 +20,10 @@ Typed section, Page, Text and media, URL, Book, and assignment updates preserve 
 }
 ```
 
-Inspect the evidence without exposing credentials:
+Check which providers a profile can use, without exposing credentials:
 
 ```powershell
-moodlia capabilities --profile school_a --course-id 42
+moodlia capabilities --profile school_a
 ```
 
 Use an explicit provider namespace when diagnostics or contract differences require it. Both paths execute in the same Node process; the Core namespace does not spawn another CLI:
@@ -37,34 +35,7 @@ moodlia plugin get-course-details --course-id 42
 
 `moodlia core` resolves the profile's Core credential. `moodlia plugin` retains the legacy `MOODLE_BASE_URL` and `MOODLE_REST_TOKEN` direct-command behavior.
 
-Create a read-only cross-site plan, without a Moodle backup:
-
-```powershell
-moodlia course sync `
-  --source-profile school_a --source-course-id 42 `
-  --target-profile school_b --target-course-id 81 `
-  --plan ".moodle-sync\plans\course-42.json"
-```
-
-Apply only the exact reviewed plan:
-
-```powershell
-moodlia course sync `
-  --apply-plan ".moodle-sync\plans\course-42.json" `
-  --plan-digest "sha256:..." --allow-write
-```
-
-The preview covers verified course fields, hidden target creation, MoodlIA-backed sections with editor files, groups and grouping membership, portable Page/Label/URL creation and identity-preserving updates, file resources and folders on creation, Books and multi-file chapters, portable standard Lesson pages without embedded files or positive cross-page jumps, new standalone and Quiz-private question banks for file-free supported question types, selected Quiz settings and separately journaled slots, selected assignment content and separate description/instruction file areas, new rubrics, binary checklists and marking guides, new Workshop grading forms, new Database field definitions, new Feedback item definitions with remapped backward dependencies, unlocked activity/course-grade completion criteria, root manual grade items, and safe module-grade-item settings. Quiz review/access settings, custom page breaks, Lesson passwords, Lesson activity links, custom grade categories, and nonportable manual weights require explicit loss acceptance. Asset bytes are streamed through a protected temporary cache, hashed during download, uploaded to an owner-scoped draft, and removed after each action. Existing unsupported authoring changes remain explicit blocking gaps by default. Existing direct commands retain their current behavior and payloads.
-
-Durable jobs use the same SQLite state for inspection, history, cancellation, reconciliation-based resume, and live verification:
-
-```powershell
-moodlia course sync --job-id JOB_ID
-moodlia course sync --history
-moodlia course sync --cancel-job JOB_ID
-moodlia course sync --resume-job JOB_ID --plan-digest "sha256:..." --allow-write
-moodlia course sync --verify-plan PLAN_ID --verify-job-id JOB_ID
-```
+Course synchronization between sites is provided by the separate [`moodlia-sync`](https://www.npmjs.com/package/moodlia-sync) package, which uses these profiles. Since 0.4.0 `moodlia course sync` and `moodlia sync ...` exit with code 3 and point there.
 
 The adaptive CLI also exposes shared evidence workflows. It prefers the richer MoodlIA implementation when available and uses the Core composition otherwise:
 
@@ -80,13 +51,17 @@ Manual enrolment synchronization is add-only and digest-bound. Core plans use nu
 
 Completion audit and repair are also adaptive. An authorized MoodlIA site provides the typed audit and dry-run repair, while a Core-only site returns the evidence it can read and an explicit capability-gap plan. A real repair requires both `--allow-write` and `--yes`; without them the MoodlIA path is dry-run only.
 
-The Moodle-hosted MCP remains a single-site operation surface. Cross-site MCP orchestration is provided separately by `moodlia-sync-mcp`; it consumes only externally approved plan digests.
+The Moodle-hosted MCP remains a single-site operation surface.
 
 Command-line and Node client for MoodlIA Moodle automation over REST.
 
 This package contains the public Node CLI, the reusable REST client, generated TypeScript declarations, and the canonical command contract needed by external users. MCP integrations remain a separate server-side surface and are not bundled into the CLI package. This package does not include server-side Moodle plugin files, deployment scripts, tests, or browser automation.
 
 The package is intentionally small: install the Moodle plugin on the server first, then use this package from developer machines, CI jobs, or automation workers.
+
+## Version 0.4
+
+Version `0.4.0` moves course synchronization to `moodlia-sync`, builds the REST client on the shared `moodle-core-cli/transport` kernel (one error class, streamed transfers, response limits, token redaction), and accepts `--<field>-file` for every text parameter. It requires `moodle-core-cli@0.4`, which has no native dependency. See the changelog for the migration table.
 
 ## Version 0.3 Adaptive Scope
 
@@ -263,6 +238,23 @@ exclusive. The server stores an uploaded asset in Moodle's native
 `mod_book/chapter` file area under the chapter id, so
 `@@PLUGINFILE@@/filename.ext` references remain valid after native course
 backup and restore.
+
+Every text parameter also accepts a UTF-8 file: `--content-file`,
+`--summary-file`, `--intro-file`, `--activity-file`, `--message-file`,
+`--definition-file`, `--description-file`, and `--question-text-file`, on
+every command whose contract has that parameter (for example
+`create-course --summary-file`, `create-forum-discussion --message-file`, or
+`create-question --question-text-file`). A UTF-8 byte-order mark is removed,
+line endings are preserved, and each file option is mutually exclusive with its
+inline value.
+
+Size limits: REST responses are limited to 64 MiB (`--max-response-bytes` or
+`MOODLE_MAX_RESPONSE_BYTES`); uploads stream without a limit unless
+`--max-upload-bytes` or `MOODLE_MAX_UPLOAD_BYTES` sets one; downloads stream
+with a 2 GiB default (`--max-download-bytes`, `MOODLE_MAX_DOWNLOAD_BYTES`).
+Exceeding a limit fails with `payload_too_large` and exit code 2. The CLI reads
+local files only from the working directory and from files named on the
+command line.
 
 Smoke-check authentication:
 

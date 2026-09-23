@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.4.0 - unreleased
+
+Breaking changes:
+
+- Course synchronization moved to the new `moodlia-sync` package.
+  `moodlia course sync`, `sync-course`, `moodlia sync ...`, and the
+  `./sync` export are removed; the commands exit with
+  `unsupported_operation` (exit code 3) and point to `moodlia-sync`.
+  `moodlia capabilities` reports provider discovery only. The MoodlIA and
+  adaptive adapters keep discovery; `createAdaptiveSiteAdapter` accepts the
+  subclasses to instantiate.
+- Requires `moodle-core-cli` 0.4, which has no native dependency.
+- `MoodleClientError` is now Core's class, so errors from both packages are
+  the same type. Its JSON output redacts sensitive detail keys.
+- REST responses are limited to 64 MiB by default (`--max-response-bytes` or
+  `MOODLE_MAX_RESPONSE_BYTES`); an oversized response raises
+  `payload_too_large` instead of exhausting memory. Uploads remain unlimited
+  unless configured; downloads stream with a 2 GiB default.
+
+Additions and fixes:
+
+- Every text parameter accepts `--<field>-file`: `content`, `summary`,
+  `intro`, `activity`, `message`, `definition`, `description`, and
+  `question_text` (40 operations instead of 15). A UTF-8 BOM is stripped.
+- `moodlia plugin audit-course` now runs the contract operation instead of
+  the adaptive audit workflow.
+- Moodle error messages and debug information no longer echo the token.
+- Upload tokens travel in the request body instead of the URL.
+- `moodlia/core/*` re-exports the Core modules that `moodlia-sync` uses.
+- A test generated from the contract exercises all 250 operations, and CI
+  checks the bundled contract against the pinned plugin release.
+
+Migration: replace `moodlia course sync ...` and `moodlia sync ...` with the
+`moodlia-sync` commands listed in its README.
+
 ## 0.3.7 - 2026-09-22
 
 - Normalize authenticated `/webservice/pluginfile.php/` editor URLs without
