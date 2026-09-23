@@ -94,7 +94,9 @@
     "types:check": "node tools/generate-operation-types.mjs --check",
     "check": "node --check cli/moodlia.mjs && node --check cli/runner.mjs && node --check client/moodle-rest-client.mjs && npm run types:check && npm run types:compile && npm test",
     "pack:check": "npm pack --dry-run",
-    "types:compile": "tsc --noEmit --skipLibCheck false --moduleResolution nodenext --module nodenext --target es2022 client/moodle-rest-client.d.ts"
+    "types:compile": "tsc --noEmit --skipLibCheck false --moduleResolution nodenext --module nodenext --target es2022 client/moodle-rest-client.d.ts",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=73 --test-coverage-include=cli/** --test-coverage-include=client/*.mjs --test-coverage-include=adaptive/** --test-coverage-include=adapters/** tests/*.test.mjs",
+    "contract:check": "node tools/check-plugin-contract.mjs"
   },
   "engines": {
     "node": ">=22.13"
@@ -108,5 +110,8 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2"
+  },
+  "moodliaPlugin": {
+    "contractRelease": "v0.1.214"
   }
 }

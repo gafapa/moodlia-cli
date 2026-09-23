@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     strategy:
@@ -20,6 +24,15 @@ jobs:
         with:
           repository: gafapa/moodle-core-cli
           path: moodle-core-cli
+      - name: Read the pinned plugin release
+        id: plugin
+        shell: bash
+        run: echo "ref=$(node -p "require('./moodlia-cli/package.json').moodliaPlugin.contractRelease")" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: gafapa/moodle-local_moodlia
+          ref: ${{ steps.plugin.outputs.ref }}
+          path: moodlia-moodle-plugin
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
@@ -32,6 +45,10 @@ jobs:
           npm pkg set dependencies.moodle-core-cli="file:../moodle-core-cli"
           npm install --ignore-scripts
       - run: npm run check
+        working-directory: moodlia-cli
+      - run: npm run test:coverage
+        working-directory: moodlia-cli
+      - run: npm run contract:check
         working-directory: moodlia-cli
       - run: npm run pack:check
         working-directory: moodlia-cli
