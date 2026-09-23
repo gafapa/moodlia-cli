@@ -153,11 +153,11 @@ export async function uploadFileToMoodleDraft({
     }
     if (payload?.exception || payload?.errorcode) {
       const errorCode = moodleErrorCode(payload);
-      throw new MoodleClientError(errorCode, payload.message || 'Moodle draft upload failed.', {
+      throw new MoodleClientError(errorCode, redactToken(payload.message, token) || 'Moodle draft upload failed.', {
         moodle_errorcode: payload.errorcode,
         moodle_exception: payload.exception,
         ...(errorCode !== 'internal_error' && payload.debuginfo
-          ? { moodle_debuginfo: payload.debuginfo }
+          ? { moodle_debuginfo: redactToken(payload.debuginfo, token) }
           : {})
       });
     }
@@ -219,7 +219,7 @@ export async function uploadDataToMoodleDraft({
     });
     const payload = await response.json();
     if (!response.ok || payload?.exception || payload?.errorcode) {
-      throw new MoodleClientError('file_upload_failed', payload?.message ?? `Upload failed with HTTP ${response.status}.`);
+      throw new MoodleClientError('file_upload_failed', redactToken(payload?.message, token) ?? `Upload failed with HTTP ${response.status}.`);
     }
     const uploaded = Array.isArray(payload) ? payload[0] : null;
     if (!uploaded || uploaded.error || Number(uploaded.itemid) <= 0) {
@@ -671,6 +671,11 @@ export function validateContractResponse(operation, payload) {
   return payload;
 }
 
+function redactToken(value, token) {
+  if (value === undefined || value === null || !token) return value;
+  return String(value).replaceAll(String(token), '[REDACTED]');
+}
+
 function moodleErrorCode(payload) {
   const errorCode = String(payload?.errorcode ?? '').toLowerCase();
   const exception = String(payload?.exception ?? '').toLowerCase();
@@ -839,12 +844,12 @@ export class RestTransport {
 
       if (payload?.exception || payload?.errorcode) {
         const errorCode = moodleErrorCode(payload);
-        throw new MoodleClientError(errorCode, payload.message || 'Moodle REST error.', {
+        throw new MoodleClientError(errorCode, redactToken(payload.message, this.token) || 'Moodle REST error.', {
           function_name: functionName,
           moodle_errorcode: payload.errorcode,
           moodle_exception: payload.exception,
           ...(errorCode !== 'internal_error' && payload.debuginfo
-            ? { moodle_debuginfo: payload.debuginfo }
+            ? { moodle_debuginfo: redactToken(payload.debuginfo, this.token) }
             : {})
         });
       }
