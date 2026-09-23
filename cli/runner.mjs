@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { exitCodeForError, exitCodeForResult } from 'moodle-core-cli/exit-codes';
 import { runMoodleCoreCli } from 'moodle-core-cli/cli-runner';
 import { loadProfiles, resolveProfile } from 'moodle-core-cli/profiles';
+import { commandLineFileRoots } from 'moodle-core-cli/transport';
 import {
   buildContractParameters,
   createMoodleRestClient,
@@ -47,27 +48,34 @@ function supportsUploadFile(operation) {
     || operation.name === 'create_module';
 }
 
-function supportsSummaryFile(operation) {
-  return operation.name === 'update_section';
+const TEXT_FILE_FIELDS = ['content', 'summary', 'intro', 'activity', 'message', 'definition', 'description', 'question_text'];
+
+function textFileFields(operation) {
+  return TEXT_FILE_FIELDS.filter((field) => operation.parameters?.[field]?.type === 'string');
 }
 
-function supportsContentFile(operation) {
-  return Object.hasOwn(operation.parameters ?? {}, 'content');
+function textFileDescription(operation, field) {
+  switch (field) {
+    case 'summary': return operation.name.includes('section') ? 'the section summary' : 'the course summary';
+    case 'intro': return operation.name === 'update_assignment' ? 'the assignment description' : 'the activity description';
+    case 'activity': return 'the assignment instructions';
+    case 'message': return 'the post message';
+    case 'definition': return 'the glossary definition';
+    case 'question_text': return 'the question text';
+    case 'description': return 'the description';
+    default: return 'the operation content';
+  }
 }
 
-function supportsAssignmentContentFiles(operation) {
-  return operation.name === 'update_assignment';
-}
-
-async function prepareAssignmentContentFileOptions(operation, rawOptions) {
+async function prepareTextFileOptions(operation, rawOptions) {
   const normalizedOptions = { ...rawOptions };
-
-  for (const field of ['intro', 'activity']) {
+  const supported = textFileFields(operation);
+  for (const field of TEXT_FILE_FIELDS) {
     const localOption = `${field}_file`;
     if (normalizedOptions[localOption] === undefined) {
       continue;
     }
-    if (!supportsAssignmentContentFiles(operation)) {
+    if (!supported.includes(field)) {
       throw new MoodleClientError(
         'invalid_parameters',
         `--${toKebabCase(localOption)} is not supported by ${toKebabCase(operation.name)}.`,
@@ -89,107 +97,27 @@ async function prepareAssignmentContentFileOptions(operation, rawOptions) {
       );
     }
 
-    const contentFilePath = path.resolve(String(normalizedOptions[localOption]));
+    const textFilePath = path.resolve(String(normalizedOptions[localOption]));
     delete normalizedOptions[localOption];
     try {
-      normalizedOptions[field] = await fs.readFile(contentFilePath, 'utf8');
+      normalizedOptions[field] = (await fs.readFile(textFilePath, 'utf8')).replace(/^﻿/, '');
     } catch (error) {
       throw new MoodleClientError(
         'invalid_parameters',
-        `Unable to read ${field} file: ${contentFilePath}`,
-        { operation: operation.name, parameter: localOption, file_path: contentFilePath },
+        `Unable to read ${field.replaceAll('_', ' ')} file: ${textFilePath}`,
+        { operation: operation.name, parameter: localOption, file_path: textFilePath },
         error
       );
     }
   }
-
   return normalizedOptions;
 }
 
-async function prepareContentFileOptions(operation, rawOptions) {
-  const normalizedOptions = { ...rawOptions };
-  if (normalizedOptions.content_file === undefined) {
-    return normalizedOptions;
-  }
-
-  if (!supportsContentFile(operation)) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      `--content-file is not supported by ${toKebabCase(operation.name)}.`,
-      { operation: operation.name, parameter: 'content_file' }
-    );
-  }
-  if (normalizedOptions.content_file === true) {
-    throw new MoodleClientError('invalid_parameters', '--content-file requires a local file path.', {
-      operation: operation.name,
-      parameter: 'content_file'
-    });
-  }
-  if (normalizedOptions.content !== undefined) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      'Do not combine --content with --content-file.',
-      { operation: operation.name, parameters: ['content', 'content_file'] }
-    );
-  }
-
-  const contentFilePath = path.resolve(String(normalizedOptions.content_file));
-  delete normalizedOptions.content_file;
-  try {
-    normalizedOptions.content = await fs.readFile(contentFilePath, 'utf8');
-  } catch (error) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      `Unable to read content file: ${contentFilePath}`,
-      { operation: operation.name, parameter: 'content_file', file_path: contentFilePath },
-      error
-    );
-  }
-
-  return normalizedOptions;
-}
-
-async function prepareSummaryFileOptions(operation, rawOptions) {
-  const normalizedOptions = { ...rawOptions };
-  if (normalizedOptions.summary_file === undefined) {
-    return normalizedOptions;
-  }
-
-  if (!supportsSummaryFile(operation)) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      `--summary-file is not supported by ${toKebabCase(operation.name)}.`,
-      { operation: operation.name, parameter: 'summary_file' }
-    );
-  }
-  if (normalizedOptions.summary_file === true) {
-    throw new MoodleClientError('invalid_parameters', '--summary-file requires a local file path.', {
-      operation: operation.name,
-      parameter: 'summary_file'
-    });
-  }
-  if (normalizedOptions.summary !== undefined) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      'Do not combine --summary with --summary-file.',
-      { operation: operation.name, parameters: ['summary', 'summary_file'] }
-    );
-  }
-
-  const summaryFilePath = path.resolve(String(normalizedOptions.summary_file));
-  delete normalizedOptions.summary_file;
-  try {
-    normalizedOptions.summary = await fs.readFile(summaryFilePath, 'utf8');
-  } catch (error) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      `Unable to read summary file: ${summaryFilePath}`,
-      { operation: operation.name, parameter: 'summary_file', file_path: summaryFilePath },
-      error
-    );
-  }
-
-  return normalizedOptions;
+function explicitLocalFiles(options) {
+  return [
+    options.upload_file,
+    ...TEXT_FILE_FIELDS.map((field) => options[`${field}_file`])
+  ].filter((value) => typeof value === 'string' && value.trim() !== '');
 }
 
 function parseArguments(argv) {
@@ -352,10 +280,10 @@ function buildParameters(operation, rawOptions) {
     'no_validate_response',
     'raw',
     'upload_file',
-    'summary_file',
-    'content_file',
-    'intro_file',
-    'activity_file'
+    'max_response_bytes',
+    'max_upload_bytes',
+    'max_download_bytes',
+    ...TEXT_FILE_FIELDS.map((field) => `${field}_file`)
   ];
   for (const [name, value] of Object.entries(normalizedOptions)) {
     if (localOptionNames.includes(name) || value === undefined || value === null || value === '') {
@@ -435,16 +363,12 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
     const qualifier = operation.name === 'create_module' ? ' for resource modules' : '';
     console.log(`  --upload-file <path>  optional${qualifier}; streams a local file to Moodle without a client-side size limit`);
   }
-  if (supportsSummaryFile(operation)) {
-    console.log('  --summary-file <path>  optional; reads the section summary from a UTF-8 file');
+  for (const field of textFileFields(operation)) {
+    console.log(`  --${toKebabCase(field)}-file <path>  optional; reads ${textFileDescription(operation, field)} from a UTF-8 file`);
   }
-  if (supportsContentFile(operation)) {
-    console.log('  --content-file <path>  optional; reads the operation content from a UTF-8 file');
-  }
-  if (supportsAssignmentContentFiles(operation)) {
-    console.log('  --intro-file <path>  optional; reads the assignment description from a UTF-8 file');
-    console.log('  --activity-file <path>  optional; reads the assignment instructions from a UTF-8 file');
-  }
+  console.log('  --max-response-bytes <n>  optional; response limit (MOODLE_MAX_RESPONSE_BYTES; default 64 MiB)');
+  console.log('  --max-upload-bytes <n>  optional; streamed upload limit (MOODLE_MAX_UPLOAD_BYTES; default unlimited)');
+  console.log('  --max-download-bytes <n>  optional; streamed download limit (MOODLE_MAX_DOWNLOAD_BYTES; default 2 GiB)');
   console.log('  --format <string>  optional; one of: json');
   console.log('  --no-validate-response  optional; skip contract response validation');
   console.log('  --raw  optional; alias for --no-validate-response');
@@ -608,16 +532,20 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
     });
   }
 
-  const summaryOptions = await prepareSummaryFileOptions(operation, options);
-  const contentOptions = await prepareContentFileOptions(operation, summaryOptions);
-  const assignmentContentOptions = await prepareAssignmentContentFileOptions(operation, contentOptions);
-  const prepared = prepareUploadFileOptions(operation, assignmentContentOptions);
+  const textOptions = await prepareTextFileOptions(operation, options);
+  const prepared = prepareUploadFileOptions(operation, textOptions);
   buildParameters(operation, prepared.options);
+  const byteOption = (name) => (options[name] === undefined ? undefined : Number(options[name]));
   const client = createMoodleRestClient({
     baseUrl: process.env.MOODLE_BASE_URL,
     token: process.env.MOODLE_REST_TOKEN,
     contract,
-    validateResponses: !(options.no_validate_response || options.raw)
+    validateResponses: !(options.no_validate_response || options.raw),
+    allowedFileRoots: commandLineFileRoots(explicitLocalFiles(options)),
+    environment: process.env,
+    maximumResponseBytes: byteOption('max_response_bytes'),
+    maximumUploadBytes: byteOption('max_upload_bytes'),
+    maximumDownloadBytes: byteOption('max_download_bytes')
   });
   const resolvedOptions = await resolveUploadFile(prepared, client);
   const parameters = buildParameters(operation, resolvedOptions);

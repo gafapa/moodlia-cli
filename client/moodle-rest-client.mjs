@@ -1,6 +1,35 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import { createHash } from 'node:crypto';
+import {
+  DEFAULT_LIMITS,
+  MoodleClientError,
+  MoodlePayloadTooLargeError,
+  assertResponseOrigin,
+  normalizeAllowedFileRoots,
+  normalizeClientError,
+  normalizeMoodleBaseUrl,
+  openUploadSource,
+  parseLimitedJsonResponse,
+  postDraftUpload,
+  readLimitedResponse,
+  redactTextValues,
+  resolveAllowedDestination,
+  resolveByteLimit,
+  resolveMoodleUrl as resolveKernelMoodleUrl,
+  streamResponseToFile
+} from 'moodle-core-cli/transport';
+
+export { MoodleClientError, MoodlePayloadTooLargeError, normalizeClientError };
+
+// MoodlIA keeps its public error codes; the shared Core kernel supplies
+// limits, streaming, file-root checks, and redaction.
+const moodliaErrors = Object.freeze({
+  configuration: (message, details = {}, cause = null) => new MoodleClientError('invalid_parameters', message, details, cause),
+  validation: (message, details = {}, cause = null) => new MoodleClientError('invalid_parameters', message, details, cause),
+  permission: (message, details = {}, cause = null) => new MoodleClientError('permission_denied', message, details, cause),
+  connection: (message, details = {}, cause = null) => new MoodleClientError('transport_error', message, details, cause)
+});
+
+const DEFAULT_ASSET_BYTES = 50 * 1024 * 1024;
 
 export function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -28,7 +57,7 @@ export function loadEnvFile(filePath) {
 }
 
 export function loadContractFromFile(contractPath) {
-  return JSON.parse(fs.readFileSync(contractPath, 'utf8').replace(/^\uFEFF/, ''));
+  return JSON.parse(fs.readFileSync(contractPath, 'utf8').replace(/^﻿/, ''));
 }
 
 export function encodeFileForUpload(filePath) {
@@ -48,6 +77,72 @@ export function encodeFileForUpload(filePath) {
   }
 }
 
+function assertTimeout(value, parameter) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new MoodleClientError('invalid_parameters', `${parameter} must be a non-negative finite number.`, {
+      parameter
+    });
+  }
+}
+
+function moodleErrorCode(payload) {
+  const errorCode = String(payload?.errorcode ?? '').toLowerCase();
+  const exception = String(payload?.exception ?? '').toLowerCase();
+  const combined = `${errorCode} ${exception}`;
+
+  if (combined.includes('invalid') || combined.includes('parameter')) {
+    return 'invalid_parameters';
+  }
+  if (combined.includes('capability') || combined.includes('permission') || combined.includes('access')) {
+    return 'missing_capability';
+  }
+  if (combined.includes('notfound') || combined.includes('not_found')) {
+    return 'not_found';
+  }
+  if (combined.includes('coding_exception')) {
+    return 'internal_error';
+  }
+
+  return 'moodle_error';
+}
+
+function moodleBusinessError(payload, token, fallbackMessage, context = {}) {
+  const errorCode = moodleErrorCode(payload);
+  return new MoodleClientError(errorCode, redactTextValues(payload.message, [token]) || fallbackMessage, {
+    ...context,
+    moodle_errorcode: payload.errorcode,
+    moodle_exception: payload.exception,
+    ...(errorCode !== 'internal_error' && payload.debuginfo
+      ? { moodle_debuginfo: redactTextValues(payload.debuginfo, [token]) }
+      : {})
+  });
+}
+
+function draftUploadResult(response, payload, fallback, token) {
+  if (!response.ok) {
+    throw new MoodleClientError('transport_error', `Moodle draft upload failed with HTTP ${response.status}.`, {
+      http_status: response.status
+    });
+  }
+  if (payload?.exception || payload?.errorcode) {
+    throw moodleBusinessError(payload, token, 'Moodle draft upload failed.');
+  }
+  const uploaded = Array.isArray(payload) ? payload[0] : null;
+  if (!uploaded || uploaded.error || !Number.isInteger(Number(uploaded.itemid)) || Number(uploaded.itemid) <= 0) {
+    throw new MoodleClientError(
+      'file_upload_failed',
+      uploaded?.error || 'Moodle did not return a draft item id.',
+      { error_type: uploaded?.errortype }
+    );
+  }
+  return {
+    draft_item_id: Number(uploaded.itemid),
+    filename: String(uploaded.filename ?? fallback.filename),
+    filepath: String(uploaded.filepath ?? fallback.filepath),
+    filesize: Number(uploaded.filesize ?? uploaded.size ?? fallback.filesize)
+  };
+}
+
 export async function uploadFileToMoodleDraft({
   baseUrl,
   token,
@@ -57,7 +152,10 @@ export async function uploadFileToMoodleDraft({
   itemId = 0,
   timeoutMs = 0,
   fetchImplementation = globalThis.fetch,
-  allowInsecure = false
+  allowInsecure = false,
+  allowedFileRoots = null,
+  maximumUploadBytes = Infinity,
+  maximumResponseBytes = DEFAULT_LIMITS.maximumResponseBytes
 } = {}) {
   if (!baseUrl || !token) {
     throw new MoodleClientError(
@@ -69,118 +167,36 @@ export async function uploadFileToMoodleDraft({
   if (typeof fetchImplementation !== 'function') {
     throw new MoodleClientError('invalid_parameters', 'A fetch implementation is required.');
   }
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
-    throw new MoodleClientError('invalid_parameters', 'timeoutMs must be a non-negative finite number.', {
-      parameter: 'timeoutMs'
-    });
-  }
+  assertTimeout(timeoutMs, 'timeoutMs');
   if (!Number.isInteger(itemId) || itemId < 0) {
     throw new MoodleClientError('invalid_parameters', 'itemId must be a non-negative integer.', {
       parameter: 'itemId'
     });
   }
-  if (typeof filePath !== 'string' || filePath.trim() === '') {
-    throw new MoodleClientError('invalid_parameters', 'An upload file path is required.', {
-      parameter: 'filePath'
-    });
-  }
-
-  const resolvedPath = path.resolve(filePath);
-  const resolvedFilename = String(filename ?? path.basename(resolvedPath)).trim();
-  if (!resolvedFilename || path.basename(resolvedFilename) !== resolvedFilename) {
-    throw new MoodleClientError('invalid_parameters', 'filename must be a plain file name.', {
-      parameter: 'filename'
-    });
-  }
-  const resolvedFilepath = String(filepath || '/');
-  if (!resolvedFilepath.startsWith('/') || !resolvedFilepath.endsWith('/') || resolvedFilepath.includes('..')) {
-    throw new MoodleClientError('invalid_parameters', 'filepath must be an absolute Moodle file path.', {
-      parameter: 'filepath'
-    });
-  }
-
-  let fileBlob;
-  try {
-    const stats = fs.statSync(resolvedPath);
-    if (!stats.isFile()) {
-      throw new Error('The path is not a regular file.');
-    }
-    fileBlob = await fs.openAsBlob(resolvedPath);
-  } catch (error) {
-    throw new MoodleClientError('invalid_parameters', `Unable to read upload file: ${resolvedPath}`, {
-      parameter: 'filePath',
-      file_path: resolvedPath
-    }, error);
-  }
-
-  const endpoint = resolveMoodleUrl(baseUrl, 'webservice/upload.php', { allowInsecure });
-  const body = new FormData();
-  body.set('token', String(token));
-  body.set('filepath', resolvedFilepath);
-  body.set('itemid', String(itemId));
-  body.set('file_1', fileBlob, resolvedFilename);
-
-  const controller = new AbortController();
-  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  try {
-    let response;
-    try {
-      response = await fetchImplementation(endpoint, {
-        method: 'POST',
-        body,
-        redirect: 'error',
-        signal: controller.signal
-      });
-    } catch (error) {
-      throw new MoodleClientError('transport_error', `Moodle draft upload failed: ${error.message}`, {
-        endpoint: 'webservice/upload.php'
-      }, error);
-    }
-
-    const text = await response.text();
-    let payload;
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch (error) {
-      throw new MoodleClientError('transport_error', 'Moodle draft upload response was not valid JSON.', {
-        http_status: response.status
-      }, error);
-    }
-    if (!response.ok) {
-      throw new MoodleClientError('transport_error', `Moodle draft upload failed with HTTP ${response.status}.`, {
-        http_status: response.status
-      });
-    }
-    if (payload?.exception || payload?.errorcode) {
-      const errorCode = moodleErrorCode(payload);
-      throw new MoodleClientError(errorCode, redactToken(payload.message, token) || 'Moodle draft upload failed.', {
-        moodle_errorcode: payload.errorcode,
-        moodle_exception: payload.exception,
-        ...(errorCode !== 'internal_error' && payload.debuginfo
-          ? { moodle_debuginfo: redactToken(payload.debuginfo, token) }
-          : {})
-      });
-    }
-    const uploaded = Array.isArray(payload) ? payload[0] : null;
-    if (!uploaded || uploaded.error || !Number.isInteger(Number(uploaded.itemid)) || Number(uploaded.itemid) <= 0) {
-      throw new MoodleClientError(
-        'file_upload_failed',
-        uploaded?.error || 'Moodle did not return a draft item id.',
-        { error_type: uploaded?.errortype }
-      );
-    }
-
-    return {
-      draft_item_id: Number(uploaded.itemid),
-      filename: String(uploaded.filename ?? resolvedFilename),
-      filepath: String(uploaded.filepath ?? resolvedFilepath),
-      filesize: Number(uploaded.filesize ?? uploaded.size ?? fileBlob.size)
-    };
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
+  const source = await openUploadSource(filePath, {
+    allowedFileRoots: normalizeAllowedFileRoots(allowedFileRoots, moodliaErrors),
+    maximumBytes: maximumUploadBytes,
+    errors: moodliaErrors
+  });
+  const resolvedFilename = filename ?? source.filename;
+  const { response, payload } = await postDraftUpload({
+    baseUrl,
+    token,
+    body: source.blob,
+    filename: resolvedFilename,
+    filepath,
+    itemId,
+    timeoutMs,
+    fetchImplementation,
+    allowInsecure,
+    maximumResponseBytes,
+    errors: moodliaErrors
+  });
+  return draftUploadResult(response, payload, {
+    filename: resolvedFilename,
+    filepath,
+    filesize: source.size
+  }, token);
 }
 
 export async function uploadDataToMoodleDraft({
@@ -192,93 +208,70 @@ export async function uploadDataToMoodleDraft({
   itemId = 0,
   timeoutMs = 0,
   fetchImplementation = globalThis.fetch,
-  allowInsecure = false
+  allowInsecure = false,
+  maximumResponseBytes = DEFAULT_LIMITS.maximumResponseBytes
 } = {}) {
   if (!baseUrl || !token || !(data instanceof Uint8Array)) {
     throw new MoodleClientError('invalid_parameters', 'A Moodle URL, token, and Uint8Array are required.');
   }
-  const resolvedFilename = String(filename ?? '').trim();
-  if (!resolvedFilename || path.basename(resolvedFilename) !== resolvedFilename) {
-    throw new MoodleClientError('invalid_parameters', 'filename must be a plain file name.');
+  const { response, payload } = await postDraftUpload({
+    baseUrl,
+    token,
+    body: new Blob([data]),
+    filename,
+    filepath,
+    itemId,
+    timeoutMs,
+    fetchImplementation,
+    allowInsecure,
+    maximumResponseBytes,
+    errors: moodliaErrors
+  });
+  if (!response.ok || payload?.exception || payload?.errorcode) {
+    throw new MoodleClientError(
+      'file_upload_failed',
+      redactTextValues(payload?.message, [token]) ?? `Upload failed with HTTP ${response.status}.`
+    );
   }
-  const resolvedFilepath = String(filepath || '/');
-  if (!resolvedFilepath.startsWith('/') || !resolvedFilepath.endsWith('/') || resolvedFilepath.includes('..')) {
-    throw new MoodleClientError('invalid_parameters', 'filepath must be an absolute Moodle file path.');
+  return draftUploadResult(response, payload, { filename, filepath, filesize: data.byteLength }, token);
+}
+
+function webServiceFileUrl(baseUrl, url, token, allowInsecure) {
+  const base = normalizeMoodleBaseUrl(baseUrl, { allowInsecure, errors: moodliaErrors, parameter: 'MOODLE_BASE_URL' });
+  const target = new URL(String(url), base);
+  if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
+    throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
   }
-  const endpoint = resolveMoodleUrl(baseUrl, 'webservice/upload.php', { allowInsecure });
-  const body = new FormData();
-  body.set('token', String(token));
-  body.set('filepath', resolvedFilepath);
-  body.set('itemid', String(itemId));
-  body.set('file_1', new Blob([data]), resolvedFilename);
-  const controller = new AbortController();
-  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  target.searchParams.set('token', String(token));
+  return target;
+}
+
+async function fetchWebServiceFile(target, fetchImplementation) {
+  let response;
   try {
-    const response = await fetchImplementation(endpoint, {
-      method: 'POST', body, redirect: 'error', signal: controller.signal
-    });
-    const payload = await response.json();
-    if (!response.ok || payload?.exception || payload?.errorcode) {
-      throw new MoodleClientError('file_upload_failed', redactToken(payload?.message, token) ?? `Upload failed with HTTP ${response.status}.`);
-    }
-    const uploaded = Array.isArray(payload) ? payload[0] : null;
-    if (!uploaded || uploaded.error || Number(uploaded.itemid) <= 0) {
-      throw new MoodleClientError('file_upload_failed', uploaded?.error ?? 'Moodle did not return a draft item id.');
-    }
-    return {
-      draft_item_id: Number(uploaded.itemid),
-      filename: String(uploaded.filename ?? resolvedFilename),
-      filepath: String(uploaded.filepath ?? resolvedFilepath),
-      filesize: Number(uploaded.filesize ?? uploaded.size ?? data.byteLength)
-    };
-  } finally {
-    if (timeout) clearTimeout(timeout);
+    response = await fetchImplementation(target, { redirect: 'error' });
+  } catch (error) {
+    throw new MoodleClientError('transport_error', 'Moodle file download failed.', {}, error);
   }
+  if (!response.ok) {
+    throw new MoodleClientError('transport_error', `Moodle file download failed with HTTP ${response.status}.`);
+  }
+  assertResponseOrigin(response, target, moodliaErrors);
+  return response;
 }
 
 export async function downloadFileFromMoodle({
   baseUrl,
   token,
   url,
-  maximumBytes = 50 * 1024 * 1024,
+  maximumBytes = DEFAULT_ASSET_BYTES,
   fetchImplementation = globalThis.fetch,
   allowInsecure = false
 } = {}) {
-  const base = normaliseMoodleBaseUrl(baseUrl, { allowInsecure });
-  const target = new URL(String(url), base);
-  if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
-    throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
-  }
-  target.searchParams.set('token', String(token));
-  const response = await fetchImplementation(target, { redirect: 'error' });
-  if (!response.ok) {
-    throw new MoodleClientError('transport_error', `Moodle file download failed with HTTP ${response.status}.`);
-  }
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
-    throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
-  }
-  const reader = response.body?.getReader();
-  if (!reader) return new Uint8Array();
-  const chunks = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > maximumBytes) {
-      await reader.cancel();
-      throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
-    }
-    chunks.push(value);
-  }
-  const data = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    data.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return data;
+  const target = webServiceFileUrl(baseUrl, url, token, allowInsecure);
+  const response = await fetchWebServiceFile(target, fetchImplementation);
+  const data = await readLimitedResponse(response, maximumBytes, 'Moodle file download', 'maximumDownloadBytes');
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 }
 
 export async function downloadFileFromMoodleToPath({
@@ -286,53 +279,25 @@ export async function downloadFileFromMoodleToPath({
   token,
   url,
   destinationPath,
-  maximumBytes = 50 * 1024 * 1024,
+  maximumBytes = DEFAULT_ASSET_BYTES,
   fetchImplementation = globalThis.fetch,
-  allowInsecure = false
+  allowInsecure = false,
+  allowedFileRoots = null
 } = {}) {
-  const base = normaliseMoodleBaseUrl(baseUrl, { allowInsecure });
-  const target = new URL(String(url), base);
-  if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
-    throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
-  }
+  const target = webServiceFileUrl(baseUrl, url, token, allowInsecure);
   if (typeof destinationPath !== 'string' || destinationPath.trim() === '') {
     throw new MoodleClientError('invalid_parameters', 'A destination path is required for streamed downloads.');
   }
-  target.searchParams.set('token', String(token));
-  const response = await fetchImplementation(target, { redirect: 'error' });
-  if (!response.ok) {
-    throw new MoodleClientError('transport_error', `Moodle file download failed with HTTP ${response.status}.`);
-  }
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
-    throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
-  }
-  const resolvedPath = path.resolve(destinationPath);
-  let handle;
-  let size = 0;
-  const hash = createHash('sha256');
+  const resolvedPath = await resolveAllowedDestination(
+    destinationPath,
+    normalizeAllowedFileRoots(allowedFileRoots, moodliaErrors),
+    moodliaErrors
+  );
+  const response = await fetchWebServiceFile(target, fetchImplementation);
   try {
-    handle = await fs.promises.open(resolvedPath, 'wx', 0o600);
-    const reader = response.body?.getReader();
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > maximumBytes) {
-          await reader.cancel();
-          throw new MoodleClientError('invalid_parameters', 'Moodle file exceeds the synchronization size limit.');
-        }
-        hash.update(value);
-        await handle.write(value);
-      }
-    }
-    await handle.close();
-    handle = null;
-    return { path: resolvedPath, filesize: size, sha256: hash.digest('hex') };
+    const { size, sha256 } = await streamResponseToFile(response, resolvedPath, { maximumBytes, hash: true });
+    return { path: resolvedPath, filesize: size, sha256 };
   } catch (error) {
-    await handle?.close().catch(() => {});
-    await fs.promises.rm(resolvedPath, { force: true }).catch(() => {});
     if (error instanceof MoodleClientError) throw error;
     throw new MoodleClientError('transport_error', 'Unable to stream a Moodle asset to the protected cache.', {}, error);
   }
@@ -342,105 +307,22 @@ export function toRestFunctionName(contract, operationName) {
   return `${contract.restPrefix}_${operationName}`;
 }
 
-export class MoodleClientError extends Error {
-  constructor(code, message, details = {}, cause = null) {
-    super(message, cause ? { cause } : undefined);
-    this.name = 'MoodleClientError';
-    this.code = code;
-    this.details = details;
-  }
-
-  toJSON() {
-    return {
-      error: true,
-      code: this.code,
-      message: this.message,
-      details: this.details
-    };
-  }
-}
-
-export function normalizeClientError(error, fallbackCode = 'internal_error', details = {}) {
-  if (error instanceof MoodleClientError) {
-    return error;
-  }
-
-  if (error && typeof error.code === 'string' && error.code.trim() !== '') {
-    return new MoodleClientError(
-      error.code,
-      error.message || 'Moodle client error.',
-      error.details && typeof error.details === 'object' ? error.details : details,
-      error
-    );
-  }
-
-  return new MoodleClientError(
-    fallbackCode,
-    error?.message || 'Unexpected Moodle client error.',
-    details,
-    error
-  );
-}
-
-function isLoopbackHostname(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
-}
-
-function normaliseMoodleBaseUrl(baseUrl, { allowInsecure = false } = {}) {
-  let resolved;
-  try {
-    resolved = new URL(baseUrl);
-  } catch (error) {
-    throw new MoodleClientError('invalid_parameters', 'MOODLE_BASE_URL must be a valid URL.', {
-      parameter: 'MOODLE_BASE_URL'
-    }, error);
-  }
-
-  if (resolved.username || resolved.password) {
-    throw new MoodleClientError('invalid_parameters', 'MOODLE_BASE_URL must not contain credentials.', {
-      parameter: 'MOODLE_BASE_URL'
-    });
-  }
-
-  if (resolved.protocol !== 'https:' && !(resolved.protocol === 'http:' && (allowInsecure || isLoopbackHostname(resolved.hostname)))) {
-    throw new MoodleClientError(
-      'invalid_parameters',
-      'MOODLE_BASE_URL must use HTTPS. HTTP is allowed only for loopback hosts or when allowInsecure is explicitly enabled.',
-      { parameter: 'MOODLE_BASE_URL', protocol: resolved.protocol }
-    );
-  }
-
-  resolved.search = '';
-  resolved.hash = '';
-  if (!resolved.pathname.endsWith('/')) {
-    resolved.pathname += '/';
-  }
-
-  return resolved;
-}
-
 export function resolveMoodleUrl(baseUrl, relativePath, options = {}) {
   const relative = String(relativePath ?? '').replace(/^\/+/, '');
-  if (!relative || /^[a-z][a-z\d+.-]*:/i.test(relative)) {
+  if (!relative) {
     throw new MoodleClientError('invalid_parameters', 'Moodle URL paths must be non-empty relative paths.', {
       parameter: 'relativePath'
     });
   }
-
-  return new URL(relative, normaliseMoodleBaseUrl(baseUrl, options));
+  return resolveKernelMoodleUrl(baseUrl, relative, {
+    ...options,
+    errors: moodliaErrors,
+    parameter: 'MOODLE_BASE_URL'
+  });
 }
 
 function findOperation(contract, operationName) {
   return contract?.operations?.find((operation) => operation.name === operationName) ?? null;
-}
-
-function normaliseOperationName(contract, operationName) {
-  const canonical = String(operationName);
-  if (findOperation(contract, canonical)) {
-    return canonical;
-  }
-
-  return canonical;
 }
 
 function validateEnum(value, definition, key) {
@@ -671,32 +553,6 @@ export function validateContractResponse(operation, payload) {
   return payload;
 }
 
-function redactToken(value, token) {
-  if (value === undefined || value === null || !token) return value;
-  return String(value).replaceAll(String(token), '[REDACTED]');
-}
-
-function moodleErrorCode(payload) {
-  const errorCode = String(payload?.errorcode ?? '').toLowerCase();
-  const exception = String(payload?.exception ?? '').toLowerCase();
-  const combined = `${errorCode} ${exception}`;
-
-  if (combined.includes('invalid') || combined.includes('parameter')) {
-    return 'invalid_parameters';
-  }
-  if (combined.includes('capability') || combined.includes('permission') || combined.includes('access')) {
-    return 'missing_capability';
-  }
-  if (combined.includes('notfound') || combined.includes('not_found')) {
-    return 'not_found';
-  }
-  if (combined.includes('coding_exception')) {
-    return 'internal_error';
-  }
-
-  return 'moodle_error';
-}
-
 export class RestTransport {
   constructor({
     baseUrl,
@@ -704,7 +560,12 @@ export class RestTransport {
     timeoutMs = 30000,
     uploadTimeoutMs = 0,
     fetchImplementation = globalThis.fetch,
-    allowInsecure = false
+    allowInsecure = false,
+    allowedFileRoots = null,
+    maximumResponseBytes,
+    maximumUploadBytes,
+    maximumDownloadBytes,
+    environment = {}
   } = {}) {
     if (!baseUrl || !token) {
       throw new MoodleClientError(
@@ -717,24 +578,26 @@ export class RestTransport {
     if (typeof fetchImplementation !== 'function') {
       throw new MoodleClientError('invalid_parameters', 'A fetch implementation is required.');
     }
+    assertTimeout(timeoutMs, 'timeoutMs');
+    assertTimeout(uploadTimeoutMs, 'uploadTimeoutMs');
 
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
-      throw new MoodleClientError('invalid_parameters', 'timeoutMs must be a non-negative finite number.', {
-        parameter: 'timeoutMs'
-      });
-    }
-    if (!Number.isFinite(uploadTimeoutMs) || uploadTimeoutMs < 0) {
-      throw new MoodleClientError('invalid_parameters', 'uploadTimeoutMs must be a non-negative finite number.', {
-        parameter: 'uploadTimeoutMs'
-      });
-    }
-
-    this.baseUrl = normaliseMoodleBaseUrl(baseUrl, { allowInsecure }).toString();
+    this.baseUrl = normalizeMoodleBaseUrl(baseUrl, {
+      allowInsecure,
+      errors: moodliaErrors,
+      parameter: 'MOODLE_BASE_URL'
+    }).toString();
     this.token = token;
     this.timeoutMs = timeoutMs;
     this.uploadTimeoutMs = uploadTimeoutMs;
     this.fetchImplementation = fetchImplementation;
     this.allowInsecure = allowInsecure;
+    this.allowedFileRoots = normalizeAllowedFileRoots(allowedFileRoots, moodliaErrors);
+    const limit = (value, name, fallback) => resolveByteLimit(value, { name, fallback, environment, errors: moodliaErrors });
+    // MoodlIA operations return whole blueprints and editor content, so the
+    // default response limit is the bulk class; uploads stay unlimited.
+    this.maximumResponseBytes = limit(maximumResponseBytes, 'maximumResponseBytes', DEFAULT_LIMITS.maximumBulkResponseBytes);
+    this.maximumUploadBytes = limit(maximumUploadBytes, 'maximumUploadBytes', Infinity);
+    this.maximumDownloadBytes = limit(maximumDownloadBytes, 'maximumDownloadBytes', DEFAULT_LIMITS.maximumDownloadBytes);
   }
 
   async uploadDraftFile(filePath, options = {}) {
@@ -745,6 +608,9 @@ export class RestTransport {
       timeoutMs: this.uploadTimeoutMs,
       fetchImplementation: this.fetchImplementation,
       allowInsecure: this.allowInsecure,
+      allowedFileRoots: this.allowedFileRoots,
+      maximumUploadBytes: this.maximumUploadBytes,
+      maximumResponseBytes: this.maximumResponseBytes,
       ...options
     });
   }
@@ -757,6 +623,7 @@ export class RestTransport {
       timeoutMs: this.uploadTimeoutMs,
       fetchImplementation: this.fetchImplementation,
       allowInsecure: this.allowInsecure,
+      maximumResponseBytes: this.maximumResponseBytes,
       ...options
     });
   }
@@ -780,11 +647,12 @@ export class RestTransport {
       destinationPath,
       fetchImplementation: this.fetchImplementation,
       allowInsecure: this.allowInsecure,
+      allowedFileRoots: this.allowedFileRoots,
       ...options
     });
   }
 
-  async callFunction(functionName, parameters = {}) {
+  async callFunction(functionName, parameters = {}, { maximumResponseBytes } = {}) {
     const endpoint = resolveMoodleUrl(this.baseUrl, 'webservice/rest/server.php', {
       allowInsecure: this.allowInsecure
     });
@@ -807,59 +675,41 @@ export class RestTransport {
       appendParameter(key, value);
     }
 
-    const controller = new AbortController();
-    const timeout = this.timeoutMs > 0 ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
-
+    const signal = this.timeoutMs > 0 ? AbortSignal.timeout(this.timeoutMs) : undefined;
+    let response;
     try {
-      let response;
-      try {
-        response = await this.fetchImplementation(endpoint, {
-          method: 'POST',
-          body,
-          redirect: 'error',
-          signal: controller.signal
-        });
-      } catch (error) {
-        throw new MoodleClientError('transport_error', `Moodle REST request failed: ${error.message}`, {
-          function_name: functionName
-        }, error);
-      }
-      const text = await response.text();
-      let payload = null;
-      try {
-        payload = text ? JSON.parse(text) : null;
-      } catch (error) {
-        throw new MoodleClientError('transport_error', 'Moodle REST response was not valid JSON.', {
-          function_name: functionName,
-          http_status: response.status
-        }, error);
-      }
-
-      if (!response.ok) {
-        throw new MoodleClientError('transport_error', `Moodle REST request failed with HTTP ${response.status}.`, {
-          function_name: functionName,
-          http_status: response.status
-        });
-      }
-
-      if (payload?.exception || payload?.errorcode) {
-        const errorCode = moodleErrorCode(payload);
-        throw new MoodleClientError(errorCode, redactToken(payload.message, this.token) || 'Moodle REST error.', {
-          function_name: functionName,
-          moodle_errorcode: payload.errorcode,
-          moodle_exception: payload.exception,
-          ...(errorCode !== 'internal_error' && payload.debuginfo
-            ? { moodle_debuginfo: redactToken(payload.debuginfo, this.token) }
-            : {})
-        });
-      }
-
-      return payload;
-    } finally {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
+      response = await this.fetchImplementation(endpoint, {
+        method: 'POST',
+        body,
+        redirect: 'error',
+        signal
+      });
+    } catch (error) {
+      throw new MoodleClientError('transport_error', `Moodle REST request failed: ${redactTextValues(error.message, [this.token])}`, {
+        function_name: functionName
+      }, error);
     }
+    assertResponseOrigin(response, endpoint, moodliaErrors);
+
+    const payload = await parseLimitedJsonResponse(
+      response,
+      maximumResponseBytes ?? this.maximumResponseBytes,
+      'Moodle REST response',
+      { errors: moodliaErrors, details: { function_name: functionName } }
+    );
+
+    if (!response.ok) {
+      throw new MoodleClientError('transport_error', `Moodle REST request failed with HTTP ${response.status}.`, {
+        function_name: functionName,
+        http_status: response.status
+      });
+    }
+
+    if (payload?.exception || payload?.errorcode) {
+      throw moodleBusinessError(payload, this.token, 'Moodle REST error.', { function_name: functionName });
+    }
+
+    return payload;
   }
 }
 
@@ -890,8 +740,7 @@ export class MoodleClient {
   }
 
   getOperation(operationName) {
-    const canonicalName = normaliseOperationName(this.contract, operationName);
-    const operation = findOperation(this.contract, canonicalName);
+    const operation = findOperation(this.contract, String(operationName));
     if (!operation) {
       throw new MoodleClientError('invalid_parameters', `Unknown operation: ${operationName}`, {
         operation: operationName
@@ -904,9 +753,11 @@ export class MoodleClient {
   async call(operationName, parameters = {}) {
     const operation = this.getOperation(operationName);
     const payload = buildContractParameters(operation, parameters, { encoding: 'form' });
+    const limit = operation.limits?.maximumResponseBytes;
     const response = await this.transport.callFunction(
       toRestFunctionName(this.contract, operation.name),
-      payload
+      payload,
+      ...(Number.isSafeInteger(limit) ? [{ maximumResponseBytes: limit }] : [])
     );
     return this.validateResponses ? validateContractResponse(operation, response) : response;
   }
@@ -963,9 +814,8 @@ function proxiedClient(client) {
         return typeof value === 'function' ? value.bind(target) : value;
       }
 
-      const canonicalName = normaliseOperationName(target.contract, property);
-      if (findOperation(target.contract, canonicalName)) {
-        return (parameters = {}) => target.call(canonicalName, parameters);
+      if (findOperation(target.contract, property)) {
+        return (parameters = {}) => target.call(property, parameters);
       }
 
       return undefined;
@@ -981,6 +831,11 @@ export function createMoodleClient({
   uploadTimeoutMs = 0,
   fetchImplementation = globalThis.fetch,
   allowInsecure = false,
+  allowedFileRoots = null,
+  maximumResponseBytes,
+  maximumUploadBytes,
+  maximumDownloadBytes,
+  environment = {},
   transport = null,
   validateResponses = true
 } = {}) {
@@ -990,7 +845,12 @@ export function createMoodleClient({
     timeoutMs,
     uploadTimeoutMs,
     fetchImplementation,
-    allowInsecure
+    allowInsecure,
+    allowedFileRoots,
+    maximumResponseBytes,
+    maximumUploadBytes,
+    maximumDownloadBytes,
+    environment
   });
 
   return proxiedClient(new MoodleClient({

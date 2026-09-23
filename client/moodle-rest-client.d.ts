@@ -1,4 +1,4 @@
-export * from './generated/operation-types.d.ts';
+export * from './generated/operation-types.js';
 
 export interface MoodleOperationContract {
   restPrefix: string;
@@ -25,7 +25,7 @@ export interface MoodleOperationDefinition {
 }
 
 export interface MoodleTransport {
-  callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  callFunction(functionName: string, parameters?: Record<string, unknown>, options?: { maximumResponseBytes?: number }): Promise<unknown>;
   uploadDraftFile?(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   uploadDraftData?(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
   downloadFile?(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
@@ -39,6 +39,16 @@ export interface RestTransportOptions {
   uploadTimeoutMs?: number;
   fetchImplementation?: typeof fetch;
   allowInsecure?: boolean;
+  /** null (default) leaves local files unrestricted; a list restricts uploads and downloads to those roots. */
+  allowedFileRoots?: string[] | null;
+  /** Default 64 MiB. */
+  maximumResponseBytes?: number;
+  /** Default unlimited; uploads always stream. */
+  maximumUploadBytes?: number;
+  /** Default 2 GiB; downloads always stream. */
+  maximumDownloadBytes?: number;
+  /** Source for MOODLE_MAX_*_BYTES defaults; pass process.env to honour them. */
+  environment?: Record<string, string | undefined>;
 }
 
 export interface MoodleClientOptions {
@@ -76,7 +86,7 @@ export interface MoodleClientInstance {
 
 export class RestTransport implements MoodleTransport {
   constructor(options?: RestTransportOptions);
-  callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
+  callFunction(functionName: string, parameters?: Record<string, unknown>, options?: { maximumResponseBytes?: number }): Promise<unknown>;
   uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
   uploadDraftData(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
   downloadFile(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
@@ -93,21 +103,14 @@ export class MoodleClient implements MoodleClientInstance {
   callOperation(operationName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   callFunction(functionName: string, parameters?: Record<string, unknown>): Promise<unknown>;
   uploadDraftFile(filePath: string, options?: DraftUploadOptions): Promise<DraftUploadResult>;
+  uploadDraftData(data: Uint8Array, options: DraftDataUploadOptions): Promise<DraftUploadResult>;
+  downloadFile(url: string, options?: { maximumBytes?: number }): Promise<Uint8Array>;
   downloadFileToPath(url: string, destinationPath: string, options?: { maximumBytes?: number }): Promise<StreamedDownloadResult>;
   [operationName: string]: unknown;
 }
 
-export class MoodleClientError extends Error {
-  constructor(code: string, message: string, details?: Record<string, unknown>, cause?: unknown);
-  readonly code: string;
-  readonly details: Record<string, unknown>;
-  toJSON(): {
-    error: true;
-    code: string;
-    message: string;
-    details: Record<string, unknown>;
-  };
-}
+export { MoodleClientError, MoodlePayloadTooLargeError } from 'moodle-core-cli/transport';
+import type { MoodleClientError } from 'moodle-core-cli/transport';
 
 export function loadEnvFile(filePath: string): void;
 export function loadContractFromFile(contractPath: string): MoodleOperationContract;

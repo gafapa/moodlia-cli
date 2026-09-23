@@ -60,8 +60,9 @@
     "test": "node --test tests/*.test.mjs",
     "types:generate": "node tools/generate-operation-types.mjs",
     "types:check": "node tools/generate-operation-types.mjs --check",
-    "check": "node --check cli/moodlia.mjs && node --check client/moodle-rest-client.mjs && npm test",
-    "pack:check": "npm pack --dry-run"
+    "check": "node --check cli/moodlia.mjs && node --check cli/runner.mjs && node --check client/moodle-rest-client.mjs && npm run types:check && npm run types:compile && npm test",
+    "pack:check": "npm pack --dry-run",
+    "types:compile": "tsc --noEmit --skipLibCheck false --moduleResolution nodenext --module nodenext --target es2022 client/moodle-rest-client.d.ts"
   },
   "engines": {
     "node": ">=22.13"
@@ -72,5 +73,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }
