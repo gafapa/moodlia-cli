@@ -1,16 +1,30 @@
 import { createMoodleClient as createCoreClient } from 'moodle-core-cli';
-import { createCoreMoodleAdapter } from 'moodle-core-cli/adapters/core';
+import { CoreMoodleAdapter } from 'moodle-core-cli/adapters/core';
 import { createMoodleClient } from '../client/moodle-rest-client.mjs';
-import { createMoodliaMoodleAdapter } from '../adapters/moodlia/index.mjs';
-import { createAdaptiveMoodleAdapter } from './adaptive-adapter.mjs';
+import { MoodliaMoodleAdapter } from '../adapters/moodlia/index.mjs';
+import { AdaptiveMoodleAdapter } from './adaptive-adapter.mjs';
 
-export function createAdaptiveSiteAdapter({ profile, moodliaContract, allowWrite = false }) {
+/**
+ * Builds the adaptive adapter for a profile. Packages that extend the
+ * adapters, such as moodlia-sync, pass their subclasses in `classes`.
+ */
+export function createAdaptiveSiteAdapter({
+  profile,
+  moodliaContract,
+  allowWrite = false,
+  classes = {}
+}) {
   if (!profile) throw new TypeError('profile is required.');
   if (!moodliaContract) throw new TypeError('moodliaContract is required.');
+  const {
+    core: CoreAdapter = CoreMoodleAdapter,
+    moodlia: MoodliaAdapter = MoodliaMoodleAdapter,
+    adaptive: AdaptiveAdapter = AdaptiveMoodleAdapter
+  } = classes;
   const useMoodlia = profile.backend !== 'core' && profile.credentials.moodlia;
   const useCore = profile.backend !== 'moodlia' && profile.credentials.core;
   const moodlia = useMoodlia
-    ? createMoodliaMoodleAdapter({
+    ? new MoodliaAdapter({
       client: createMoodleClient({
         baseUrl: profile.url,
         token: profile.credentials.moodlia.token,
@@ -21,7 +35,7 @@ export function createAdaptiveSiteAdapter({ profile, moodliaContract, allowWrite
     })
     : null;
   const core = useCore
-    ? createCoreMoodleAdapter({
+    ? new CoreAdapter({
       client: createCoreClient({
         baseUrl: profile.url,
         token: profile.credentials.core.token,
@@ -31,5 +45,5 @@ export function createAdaptiveSiteAdapter({ profile, moodliaContract, allowWrite
       profileName: profile.name
     })
     : null;
-  return createAdaptiveMoodleAdapter({ moodlia, core, profileName: profile.name });
+  return new AdaptiveAdapter({ moodlia, core, profileName: profile.name });
 }

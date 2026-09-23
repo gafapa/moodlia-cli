@@ -1,5 +1,3 @@
-import type { CourseSyncModel } from 'moodle-core-cli/sync';
-
 export interface MoodliaAdapterOptions {
   client: {
     operationNames(): string[];
@@ -8,13 +6,15 @@ export interface MoodliaAdapterOptions {
   profileName?: string | null;
 }
 
+/** Site discovery for the MoodlIA plugin. moodlia-sync extends it with synchronization. */
 export class MoodliaMoodleAdapter {
   constructor(options: MoodliaAdapterOptions);
+  readonly client: MoodliaAdapterOptions['client'];
   readonly provider: 'moodlia';
+  profileName: string | null;
+  discovery: Record<string, unknown> | null;
   discoverSite(): Promise<Record<string, unknown>>;
-  exportCourse(courseId: number): Promise<CourseSyncModel>;
-  syncCapabilities(input?: { courseId?: number }): Promise<Record<string, unknown>>;
-  applySyncAction(action: Record<string, unknown>, context: { courseId: number }): Promise<unknown>;
+  hasDeclaredOperation(name: string): boolean;
 }
 
 export function createMoodliaMoodleAdapter(options: MoodliaAdapterOptions): MoodliaMoodleAdapter;

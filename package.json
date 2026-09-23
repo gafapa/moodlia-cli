@@ -33,17 +33,49 @@
       "types": "./adapters/moodlia/index.d.ts",
       "import": "./adapters/moodlia/index.mjs"
     },
-    "./sync": {
-      "types": "./sync/index.d.ts",
-      "import": "./sync/index.mjs"
+    "./core": {
+      "types": "./core/index.d.ts",
+      "import": "./core/index.mjs"
+    },
+    "./core/profiles": {
+      "types": "./core/profiles.d.ts",
+      "import": "./core/profiles.mjs"
+    },
+    "./core/canonical": {
+      "types": "./core/canonical.d.ts",
+      "import": "./core/canonical.mjs"
+    },
+    "./core/transport": {
+      "types": "./core/transport.d.ts",
+      "import": "./core/transport.mjs"
+    },
+    "./core/cli-options": {
+      "types": "./core/cli-options.d.ts",
+      "import": "./core/cli-options.mjs"
+    },
+    "./core/exit-codes": {
+      "types": "./core/exit-codes.d.ts",
+      "import": "./core/exit-codes.mjs"
+    },
+    "./core/capabilities": {
+      "types": "./core/capabilities.d.ts",
+      "import": "./core/capabilities.mjs"
+    },
+    "./core/adapters": {
+      "types": "./core/adapters.d.ts",
+      "import": "./core/adapters.mjs"
+    },
+    "./core/workflows": {
+      "types": "./core/workflows.d.ts",
+      "import": "./core/workflows.mjs"
     }
   },
   "files": [
     "cli/",
+    "core/",
     "client/",
     "adaptive/",
     "adapters/",
-    "sync/",
     "contract/",
     "CHANGELOG.md",
     "LICENSE",

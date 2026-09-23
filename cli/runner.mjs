@@ -13,12 +13,7 @@ import {
   MoodleClientError,
   normalizeClientError
 } from '../client/moodle-rest-client.mjs';
-import {
-  printAdaptiveCapabilitiesHelp,
-  printAdaptiveSyncHelp,
-  runAdaptiveCapabilities,
-  runAdaptiveCourseSync
-} from './adaptive-commands.mjs';
+import { printCapabilitiesHelp, runCapabilities, syncMovedError } from './capabilities-command.mjs';
 import {
   printAdaptiveCourseAuditHelp,
   printAdaptiveCourseCompletionAuditHelp,
@@ -324,9 +319,8 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
     console.log(`Usage: ${commandPrefix} <command> [options]`);
     console.log('');
     console.log('Commands:');
-    console.log('  capabilities  Inspect adaptive Core and MoodlIA capabilities');
-    console.log('  course sync   Plan or apply cross-site course synchronization');
-    console.log('  sync-course   Alias for course sync');
+    console.log('  capabilities  Discover the Core and MoodlIA providers of a site profile');
+    console.log('                (course synchronization is provided by the moodlia-sync package)');
     console.log('  course audit  Evidence-based adaptive course audit');
     console.log('  course progress  Adaptive progress and grade report');
     console.log('  course completion audit  Adaptive completion configuration audit');
@@ -451,40 +445,16 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
 
   if (workflowRouting && command === 'capabilities') {
     if (options.help) {
-      printAdaptiveCapabilitiesHelp();
+      printCapabilitiesHelp();
       return;
     }
-    const payload = await runAdaptiveCapabilities(options, contract);
+    const payload = await runCapabilities(options, contract);
     console.log(JSON.stringify(payload, null, 2));
     process.exitCode = exitCodeForResult(payload);
     return;
   }
   if (syncCommand) {
-    if (options.help) {
-      printAdaptiveSyncHelp();
-      return;
-    }
-    const { job_id: groupedJobId, plan_id: groupedPlanId, binding_id: groupedBindingId,
-      ...groupedBaseOptions } = options;
-    const groupedOptions = syncSubcommand === 'status'
-      ? { ...groupedBaseOptions, job_id: groupedJobId }
-      : syncSubcommand === 'resume'
-        ? { ...groupedBaseOptions, resume_job: groupedJobId }
-        : syncSubcommand === 'verify'
-          ? {
-              ...groupedBaseOptions,
-              verify_plan: groupedPlanId ?? groupedBindingId,
-              verify_job_id: groupedJobId
-            }
-          : syncSubcommand === 'history'
-            ? { ...groupedBaseOptions, history: true }
-            : syncSubcommand === 'cancel'
-              ? { ...groupedBaseOptions, cancel_job: groupedJobId }
-              : options;
-    const payload = await runAdaptiveCourseSync(groupedOptions, contract);
-    console.log(JSON.stringify(payload, null, 2));
-    process.exitCode = exitCodeForResult(payload);
-    return;
+    throw syncMovedError();
   }
   if (auditCommand || progressCommand || completionAuditCommand || completionRepairCommand || enrolmentSyncCommand) {
     if (options.help) {
