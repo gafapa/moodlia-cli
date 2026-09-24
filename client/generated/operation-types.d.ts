@@ -132,7 +132,7 @@ export interface GetCourseCompletionCriteriaParameters {
 
 export interface SetCourseCompletionCriteriaParameters {
   course_id: number;
-  required_module_ids?: unknown[];
+  required_module_ids?: number[];
   require_all_activities?: boolean;
   required_course_grade_percent?: number;
   criteria_aggregation?: "all" | "any";
@@ -1964,7 +1964,7 @@ export interface GetModuleDetailsResponse {
   completion_expected: number;
   added: number;
   deletion_in_progress: boolean;
-  extra_json: unknown;
+  extra_json: string;
 }
 
 export interface GetCalendarEventsResponse {
@@ -2128,7 +2128,7 @@ export interface GetCourseCompletionStatusResponse {
   aggregation: number;
   criteria_count: number;
   completed_criteria_count: number;
-  status_json: unknown;
+  status_json: string;
   warnings: {
     item: string;
     item_id: number;
@@ -2153,7 +2153,7 @@ export interface GetActivityCompletionStatusesResponse {
     is_automatic: boolean;
     is_tracked_user: boolean;
     user_visible: boolean;
-    details_json: unknown;
+    details_json: string;
   }[];
   warnings: {
     item: string;
@@ -2534,8 +2534,8 @@ export interface AddGroupToGroupingResponse {
   grouping_id: number;
   group_id: number;
   added: boolean;
-  grouping: JsonObject | string;
-  group: JsonObject | string;
+  grouping: JsonObject;
+  group: JsonObject;
 }
 
 export interface RemoveGroupFromGroupingResponse {
@@ -4478,7 +4478,7 @@ export interface GetFeedbackAnalysisResponse {
   completed_count: number;
   items_count: number;
   items_data: {
-    item: JsonObject | string;
+    item: JsonObject;
     data_json: string;
   }[];
   warnings: unknown[];
