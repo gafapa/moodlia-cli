@@ -25,7 +25,7 @@ Additions and fixes:
   `intro`, `activity`, `message`, `definition`, `description`, and
   `question_text` (40 operations instead of 15). A UTF-8 BOM is stripped.
 - Operations that take files as a draft item id (forum discussions and
-  replies, glossary entries, Lesson pages; plugin 0.1.215) accept
+  replies, glossary entries, Lesson and wiki pages; plugin 0.1.215) accept
   `--upload-file`, and forum and glossary also `--attachment-file`.
   `create-question` and `update-question` accept `--background-image-file` for
   drag-and-drop questions.

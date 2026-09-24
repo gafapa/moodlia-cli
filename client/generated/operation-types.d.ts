@@ -1044,6 +1044,7 @@ export interface CreateWikiPageParameters {
   content_format?: "html" | "creole" | "nwiki";
   group_id?: number;
   user_id?: number;
+  draft_item_id?: number;
 }
 
 export interface GetWikiPagesParameters {
@@ -1085,6 +1086,7 @@ export interface UpdateWikiPageParameters {
   page_id: number;
   content: string;
   section?: string;
+  draft_item_id?: number;
 }
 
 export interface DeleteWikiPageParameters {
