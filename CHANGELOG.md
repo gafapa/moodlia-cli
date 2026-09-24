@@ -36,6 +36,8 @@ Additions and fixes:
   the adaptive audit workflow.
 - Moodle error messages and debug information no longer echo the token.
 - Upload tokens travel in the request body instead of the URL.
+- File downloads accept browser `pluginfile.php` URLs, such as those returned
+  by `backup_course`, and fetch them through the webservice endpoint.
 - `moodlia/core/*` re-exports the Core modules that `moodlia-sync` uses.
 - A test generated from the contract exercises all 250 operations, and CI
   checks the bundled contract against the pinned plugin release.

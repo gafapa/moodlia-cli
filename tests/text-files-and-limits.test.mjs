@@ -185,3 +185,28 @@ test('the CLI allows explicitly named files outside the working directory', asyn
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('downloads accept browser pluginfile URLs such as backup_course results', async () => {
+  const { downloadFileFromMoodle } = await import('../client/moodle-rest-client.mjs');
+  const requested = [];
+  const data = await downloadFileFromMoodle({
+    baseUrl: 'https://moodle.example.com/campus',
+    token: 'secret',
+    url: 'https://moodle.example.com/campus/pluginfile.php/5/backup/course/backup.mbz',
+    fetchImplementation: async (url) => {
+      requested.push(new URL(url));
+      return new Response('mbz');
+    }
+  });
+  assert.equal(Buffer.from(data).toString(), 'mbz');
+  assert.equal(requested[0].pathname, '/campus/webservice/pluginfile.php/5/backup/course/backup.mbz');
+  await assert.rejects(
+    () => downloadFileFromMoodle({
+      baseUrl: 'https://moodle.example.com/campus',
+      token: 'secret',
+      url: 'https://evil.example.com/campus/pluginfile.php/5/x',
+      fetchImplementation: async () => new Response('x')
+    }),
+    { code: 'permission_denied' }
+  );
+});

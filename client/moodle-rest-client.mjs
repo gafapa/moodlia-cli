@@ -239,6 +239,12 @@ export async function uploadDataToMoodleDraft({
 function webServiceFileUrl(baseUrl, url, token, allowInsecure) {
   const base = normalizeMoodleBaseUrl(baseUrl, { allowInsecure, errors: moodliaErrors, parameter: 'MOODLE_BASE_URL' });
   const target = new URL(String(url), base);
+  // Operations such as backup_course return browser pluginfile URLs; tokens
+  // only authenticate through the webservice endpoint.
+  const browserPrefix = `${base.pathname}pluginfile.php/`;
+  if (target.origin === base.origin && target.pathname.startsWith(browserPrefix)) {
+    target.pathname = `${base.pathname}webservice/pluginfile.php/${target.pathname.slice(browserPrefix.length)}`;
+  }
   if (target.origin !== base.origin || !target.pathname.includes('/webservice/pluginfile.php/')) {
     throw new MoodleClientError('permission_denied', 'Asset downloads must use the configured Moodle webservice file endpoint.');
   }
