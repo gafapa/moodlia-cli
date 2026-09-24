@@ -328,10 +328,10 @@ test('section commands accept HTML summaries from the shared contract', async ()
     '--course-id', '42',
     '--name', 'Section',
     '--summary', 'Summary',
-    '--summary-format', 'markdown'
+    '--summary-format', 'rtf'
   ]);
   assert.equal(rejected.code, 2);
-  assert.match(JSON.parse(rejected.stderr.trim()).message, /summary_format must be one of: html, plain/);
+  assert.match(JSON.parse(rejected.stderr.trim()).message, /summary_format must be one of: html, plain, markdown, moodle/);
 });
 
 test('update-section help exposes local summary and upload file options', async () => {

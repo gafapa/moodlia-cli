@@ -112,6 +112,6 @@
     "typescript": "^7.0.2"
   },
   "moodliaPlugin": {
-    "contractRelease": "v0.1.214"
+    "contractRelease": "v0.1.215"
   }
 }

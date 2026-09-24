@@ -38,9 +38,24 @@ function toSnakeCase(value) {
   return value.replaceAll('-', '_');
 }
 
+// Operations whose files travel only as a draft item id (no upload_reference):
+// the uploaded file's draft id is passed in this parameter.
+function editorDraftParameter(operation) {
+  const parameters = operation.parameters ?? {};
+  if (Object.hasOwn(parameters, 'upload_reference')) return null;
+  if (Object.hasOwn(parameters, 'draft_item_id')) return 'draft_item_id';
+  if (Object.hasOwn(parameters, 'inline_draft_item_id')) return 'inline_draft_item_id';
+  return null;
+}
+
 function supportsUploadFile(operation) {
   return Object.hasOwn(operation.parameters ?? {}, 'upload_reference')
-    || operation.name === 'create_module';
+    || operation.name === 'create_module'
+    || editorDraftParameter(operation) !== null;
+}
+
+function supportsAttachmentFile(operation) {
+  return Object.hasOwn(operation.parameters ?? {}, 'attachment_draft_item_id');
 }
 
 const TEXT_FILE_FIELDS = ['content', 'summary', 'intro', 'activity', 'message', 'definition', 'description', 'question_text'];
@@ -108,9 +123,77 @@ async function prepareTextFileOptions(operation, rawOptions) {
   return normalizedOptions;
 }
 
+const BACKGROUND_IMAGE_OPERATIONS = new Set(['create_question', 'update_question']);
+
+// Drag-and-drop questions (ddimageortext, ddmarker) need a background image,
+// which the plugin reads from options.background_image_base64.
+async function prepareBackgroundImageOption(operation, rawOptions) {
+  const normalizedOptions = { ...rawOptions };
+  if (normalizedOptions.background_image_file === undefined) {
+    return normalizedOptions;
+  }
+  if (!BACKGROUND_IMAGE_OPERATIONS.has(operation.name)) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      `--background-image-file is not supported by ${toKebabCase(operation.name)}.`,
+      { operation: operation.name, parameter: 'background_image_file' }
+    );
+  }
+  if (normalizedOptions.background_image_file === true) {
+    throw new MoodleClientError('invalid_parameters', '--background-image-file requires a local file path.', {
+      operation: operation.name,
+      parameter: 'background_image_file'
+    });
+  }
+  const imagePath = path.resolve(String(normalizedOptions.background_image_file));
+  delete normalizedOptions.background_image_file;
+  let questionOptions = {};
+  if (normalizedOptions.options !== undefined && normalizedOptions.options !== '') {
+    try {
+      questionOptions = typeof normalizedOptions.options === 'object'
+        ? { ...normalizedOptions.options }
+        : JSON.parse(String(normalizedOptions.options));
+    } catch (error) {
+      throw new MoodleClientError('invalid_parameters', '--options must be valid JSON.', {
+        operation: operation.name,
+        parameter: 'options'
+      }, error);
+    }
+  }
+  if (!questionOptions || typeof questionOptions !== 'object' || Array.isArray(questionOptions)) {
+    throw new MoodleClientError('invalid_parameters', '--options must be a JSON object.', {
+      operation: operation.name,
+      parameter: 'options'
+    });
+  }
+  if (questionOptions.background_image_base64 !== undefined) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      'Do not combine --background-image-file with options.background_image_base64.',
+      { operation: operation.name, parameters: ['background_image_file', 'options.background_image_base64'] }
+    );
+  }
+  let image;
+  try {
+    image = await fs.readFile(imagePath);
+  } catch (error) {
+    throw new MoodleClientError('invalid_parameters', `Unable to read background image file: ${imagePath}`, {
+      operation: operation.name,
+      parameter: 'background_image_file',
+      file_path: imagePath
+    }, error);
+  }
+  questionOptions.background_image_base64 = image.toString('base64');
+  questionOptions.background_filename ??= path.basename(imagePath);
+  normalizedOptions.options = JSON.stringify(questionOptions);
+  return normalizedOptions;
+}
+
 function explicitLocalFiles(options) {
   return [
     options.upload_file,
+    options.attachment_file,
+    options.background_image_file,
     ...TEXT_FILE_FIELDS.map((field) => options[`${field}_file`])
   ].filter((value) => typeof value === 'string' && value.trim() !== '');
 }
@@ -174,6 +257,20 @@ function prepareUploadFileOptions(operation, rawOptions) {
 
   const uploadFilePath = path.resolve(String(normalizedOptions.upload_file));
   delete normalizedOptions.upload_file;
+  const draftParameter = editorDraftParameter(operation);
+  if (draftParameter) {
+    if (normalizedOptions[draftParameter] !== undefined) {
+      throw new MoodleClientError(
+        'invalid_parameters',
+        `Do not combine --upload-file with --${toKebabCase(draftParameter)}.`,
+        { operation: operation.name, parameters: ['upload_file', draftParameter] }
+      );
+    }
+    return {
+      options: normalizedOptions,
+      upload: { filePath: uploadFilePath, filename: path.basename(uploadFilePath), target: 'draft', parameter: draftParameter }
+    };
+  }
   if (Object.hasOwn(operation.parameters ?? {}, 'upload_reference')) {
     if (normalizedOptions.upload_reference !== undefined || normalizedOptions.draft_item_id !== undefined) {
       throw new MoodleClientError(
@@ -230,15 +327,54 @@ function prepareUploadFileOptions(operation, rawOptions) {
   };
 }
 
+function prepareAttachmentFileOption(operation, prepared) {
+  const normalizedOptions = { ...prepared.options };
+  if (normalizedOptions.attachment_file === undefined) {
+    return { ...prepared, options: normalizedOptions, attachment: null };
+  }
+  if (!supportsAttachmentFile(operation)) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      `--attachment-file is not supported by ${toKebabCase(operation.name)}.`,
+      { operation: operation.name, parameter: 'attachment_file' }
+    );
+  }
+  if (normalizedOptions.attachment_file === true) {
+    throw new MoodleClientError('invalid_parameters', '--attachment-file requires a local file path.', {
+      operation: operation.name,
+      parameter: 'attachment_file'
+    });
+  }
+  if (normalizedOptions.attachment_draft_item_id !== undefined) {
+    throw new MoodleClientError(
+      'invalid_parameters',
+      'Do not combine --attachment-file with --attachment-draft-item-id.',
+      { operation: operation.name, parameters: ['attachment_file', 'attachment_draft_item_id'] }
+    );
+  }
+  const filePath = path.resolve(String(normalizedOptions.attachment_file));
+  delete normalizedOptions.attachment_file;
+  return { ...prepared, options: normalizedOptions, attachment: { filePath, filename: path.basename(filePath) } };
+}
+
 async function resolveUploadFile(prepared, client) {
+  let options = { ...prepared.options };
+  if (prepared.attachment) {
+    const attached = await client.uploadDraftFile(prepared.attachment.filePath, { filename: prepared.attachment.filename });
+    options.attachment_draft_item_id = attached.draft_item_id;
+  }
   if (!prepared.upload) {
-    return prepared.options;
+    return options;
   }
 
   const uploaded = await client.uploadDraftFile(prepared.upload.filePath, {
     filename: prepared.upload.filename
   });
-  const normalizedOptions = { ...prepared.options };
+  const normalizedOptions = options;
+  if (prepared.upload.target === 'draft') {
+    normalizedOptions[prepared.upload.parameter] = uploaded.draft_item_id;
+    return normalizedOptions;
+  }
   if (prepared.upload.target === 'operation') {
     normalizedOptions.filename = uploaded.filename;
     normalizedOptions.draft_item_id = uploaded.draft_item_id;
@@ -275,6 +411,8 @@ function buildParameters(operation, rawOptions) {
     'no_validate_response',
     'raw',
     'upload_file',
+    'attachment_file',
+    'background_image_file',
     'max_response_bytes',
     'max_upload_bytes',
     'max_download_bytes',
@@ -352,6 +490,12 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
   console.log('Options:');
   for (const [name, definition] of Object.entries(operation.parameters)) {
     console.log(`  --${toKebabCase(name)} <${definition.type}>  ${describeOption(definition)}`);
+  }
+  if (BACKGROUND_IMAGE_OPERATIONS.has(operation.name)) {
+    console.log('  --background-image-file <path>  optional; image for ddimageortext and ddmarker questions');
+  }
+  if (supportsAttachmentFile(operation)) {
+    console.log('  --attachment-file <path>  optional; streams a local file to Moodle as an attachment');
   }
   if (supportsUploadFile(operation)) {
     const qualifier = operation.name === 'create_module' ? ' for resource modules' : '';
@@ -502,8 +646,8 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
     });
   }
 
-  const textOptions = await prepareTextFileOptions(operation, options);
-  const prepared = prepareUploadFileOptions(operation, textOptions);
+  const textOptions = await prepareBackgroundImageOption(operation, await prepareTextFileOptions(operation, options));
+  const prepared = prepareAttachmentFileOption(operation, prepareUploadFileOptions(operation, textOptions));
   buildParameters(operation, prepared.options);
   const byteOption = (name) => (options[name] === undefined ? undefined : Number(options[name]));
   const client = createMoodleRestClient({

@@ -1561,7 +1561,11 @@
           "course_id": 7,
           "name": "sample",
           "description": "sample",
-          "idnumber": "sample"
+          "description_format": "sample",
+          "idnumber": "sample",
+          "visibility": "sample",
+          "participation": true,
+          "has_enrolment_key": true
         }
       ]
     },
@@ -1588,7 +1592,11 @@
       "course_id": 7,
       "name": "sample",
       "description": "sample",
-      "idnumber": "sample"
+      "description_format": "sample",
+      "idnumber": "sample",
+      "visibility": "sample",
+      "participation": true,
+      "has_enrolment_key": true
     },
     "stderr": null
   },
@@ -1613,7 +1621,11 @@
       "course_id": 7,
       "name": "sample",
       "description": "sample",
-      "idnumber": "sample"
+      "description_format": "sample",
+      "idnumber": "sample",
+      "visibility": "sample",
+      "participation": true,
+      "has_enrolment_key": true
     },
     "stderr": null
   },

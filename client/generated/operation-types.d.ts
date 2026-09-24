@@ -314,6 +314,10 @@ export interface CreateGroupParameters {
   name: string;
   description?: string;
   idnumber?: string;
+  description_format?: "html" | "plain" | "markdown" | "moodle";
+  visibility?: "all" | "members" | "own" | "none";
+  participation?: boolean;
+  enrolment_key?: string;
 }
 
 export interface UpdateGroupParameters {
@@ -322,6 +326,10 @@ export interface UpdateGroupParameters {
   name?: string;
   description?: string;
   idnumber?: string;
+  description_format?: "html" | "plain" | "markdown" | "moodle";
+  visibility?: "all" | "members" | "own" | "none";
+  participation?: boolean;
+  enrolment_key?: string;
 }
 
 export interface DeleteGroupParameters {
@@ -388,7 +396,7 @@ export interface CreateCourseParameters {
   category_id?: number;
   visible?: boolean;
   summary?: string;
-  summary_format?: "html" | "plain";
+  summary_format?: "html" | "plain" | "markdown" | "moodle";
   course_format?: string;
   start_date?: number;
   end_date?: number;
@@ -486,7 +494,7 @@ export interface UpdateCourseParameters {
   shortname?: string;
   visible?: boolean;
   summary?: string;
-  summary_format?: "html" | "plain";
+  summary_format?: "html" | "plain" | "markdown" | "moodle";
   course_format?: string;
   category_id?: number;
   start_date?: number;
@@ -507,7 +515,7 @@ export interface CreateSectionParameters {
   course_id: number;
   name: string;
   summary?: string;
-  summary_format?: "html" | "plain";
+  summary_format?: "html" | "plain" | "markdown" | "moodle";
   position?: number;
   visible?: boolean;
 }
@@ -518,7 +526,7 @@ export interface UpdateSectionParameters {
   section_number?: number;
   name?: string;
   summary?: string;
-  summary_format?: "html" | "plain";
+  summary_format?: "html" | "plain" | "markdown" | "moodle";
   visible?: boolean;
   filename?: string;
   upload_reference?: string;
@@ -584,7 +592,7 @@ export interface CreateBookChapterParameters {
   module_id: number;
   title: string;
   content: string;
-  content_format?: number;
+  content_format?: "html" | "plain" | "markdown" | "moodle" | "0" | "1" | "2" | "4";
   subchapter?: boolean;
   after_chapter_id?: number;
   hidden?: boolean;
@@ -599,7 +607,7 @@ export interface UpdateBookChapterParameters {
   chapter_id: number;
   title?: string;
   content?: string;
-  content_format?: number;
+  content_format?: "html" | "plain" | "markdown" | "moodle" | "0" | "1" | "2" | "4";
   subchapter?: boolean;
   hidden?: boolean;
   filename?: string;
@@ -646,13 +654,14 @@ export interface CreateLessonPageParameters {
   module_id: number;
   title: string;
   content: string;
-  content_format?: number;
+  content_format?: "html" | "plain" | "markdown" | "moodle" | "0" | "1" | "2" | "4";
   branches?: JsonObject | string;
   after_page_id?: number;
   display_in_menu?: boolean;
   horizontal?: boolean;
   page_type?: "content" | "essay" | "matching" | "multichoice" | "numerical" | "shortanswer" | "truefalse";
   answers?: JsonObject | string;
+  draft_item_id?: number;
 }
 
 export interface UpdateLessonPageParameters {
@@ -661,11 +670,12 @@ export interface UpdateLessonPageParameters {
   page_id: number;
   title?: string;
   content?: string;
-  content_format?: number;
+  content_format?: "html" | "plain" | "markdown" | "moodle" | "0" | "1" | "2" | "4";
   branches?: JsonObject | string;
   display_in_menu?: boolean;
   horizontal?: boolean;
   answers?: JsonObject | string;
+  draft_item_id?: number;
 }
 
 export interface DeleteLessonPageParameters {
@@ -851,7 +861,7 @@ export interface EvaluateWorkshopAssessmentParameters {
   module_id: number;
   assessment_id: number;
   feedback_text?: string;
-  feedback_format?: "html" | "plain";
+  feedback_format?: "html" | "plain" | "markdown" | "moodle";
   weight?: number;
   grading_grade_over?: string;
 }
@@ -861,7 +871,7 @@ export interface CreateWorkshopSubmissionParameters {
   module_id: number;
   title: string;
   content?: string;
-  content_format?: "html" | "plain";
+  content_format?: "html" | "plain" | "markdown" | "moodle";
 }
 
 export interface UpdateWorkshopSubmissionParameters {
@@ -870,7 +880,7 @@ export interface UpdateWorkshopSubmissionParameters {
   submission_id: number;
   title: string;
   content?: string;
-  content_format?: "html" | "plain";
+  content_format?: "html" | "plain" | "markdown" | "moodle";
 }
 
 export interface DeleteWorkshopSubmissionParameters {
@@ -884,8 +894,10 @@ export interface CreateGlossaryEntryParameters {
   module_id: number;
   concept: string;
   definition: string;
-  definition_format?: "html" | "plain";
+  definition_format?: "html" | "plain" | "markdown" | "moodle";
   options?: JsonObject | string;
+  inline_draft_item_id?: number;
+  attachment_draft_item_id?: number;
 }
 
 export interface GetCourseGlossariesParameters {
@@ -1012,8 +1024,10 @@ export interface UpdateGlossaryEntryParameters {
   entry_id: number;
   concept?: string;
   definition?: string;
-  definition_format?: "html" | "plain";
+  definition_format?: "html" | "plain" | "markdown" | "moodle";
   options?: JsonObject | string;
+  inline_draft_item_id?: number;
+  attachment_draft_item_id?: number;
 }
 
 export interface DeleteGlossaryEntryParameters {
@@ -1198,6 +1212,8 @@ export interface CreateForumDiscussionParameters {
   module_id: number;
   name: string;
   message: string;
+  inline_draft_item_id?: number;
+  attachment_draft_item_id?: number;
 }
 
 export interface GetForumDiscussionPostsParameters {
@@ -1213,6 +1229,9 @@ export interface CreateForumDiscussionPostParameters {
   parent_post_id?: number;
   subject: string;
   message: string;
+  message_format?: "html" | "plain" | "markdown" | "moodle";
+  inline_draft_item_id?: number;
+  attachment_draft_item_id?: number;
 }
 
 export interface UpdateForumDiscussionPostParameters {
@@ -1222,6 +1241,9 @@ export interface UpdateForumDiscussionPostParameters {
   post_id: number;
   subject?: string;
   message?: string;
+  message_format?: "html" | "plain" | "markdown" | "moodle";
+  inline_draft_item_id?: number;
+  attachment_draft_item_id?: number;
 }
 
 export interface SetForumDiscussionPinParameters {
@@ -1268,9 +1290,9 @@ export interface UpdateAssignmentParameters {
   module_id: number;
   name?: string;
   intro?: string;
-  intro_format?: "html" | "plain";
+  intro_format?: "html" | "plain" | "markdown" | "moodle";
   activity?: string;
-  activity_format?: "html" | "plain";
+  activity_format?: "html" | "plain" | "markdown" | "moodle";
   filename?: string;
   upload_reference?: string;
   draft_item_id?: number;
@@ -1422,7 +1444,7 @@ export interface UpdatePageParameters {
   module_id: number;
   name?: string;
   content?: string;
-  content_format?: "html" | "plain";
+  content_format?: "html" | "plain" | "markdown" | "moodle";
   print_intro?: boolean;
   print_last_modified?: boolean;
   filename?: string;
@@ -1434,7 +1456,7 @@ export interface UpdateLabelParameters {
   course_id: number;
   module_id: number;
   content?: string;
-  content_format?: "html" | "plain";
+  content_format?: "html" | "plain" | "markdown" | "moodle";
   filename?: string;
   upload_reference?: string;
   draft_item_id?: number;
@@ -1446,7 +1468,7 @@ export interface UpdateUrlParameters {
   name?: string;
   external_url?: string;
   intro?: string;
-  intro_format?: "html" | "plain";
+  intro_format?: "html" | "plain" | "markdown" | "moodle";
   display?: number;
   print_intro?: boolean;
   popup_width?: number;
@@ -1464,7 +1486,7 @@ export interface UpdateResourceParameters {
   draft_item_id?: number;
   name?: string;
   intro?: string;
-  intro_format?: "html" | "plain";
+  intro_format?: "html" | "plain" | "markdown" | "moodle";
 }
 
 export interface GetResourceFilesParameters {
@@ -2437,7 +2459,11 @@ export interface GetGroupsResponse {
     course_id: number;
     name: string;
     description: string;
+    description_format: string;
     idnumber: string;
+    visibility: string;
+    participation: boolean;
+    has_enrolment_key: boolean;
   }[];
 }
 
@@ -2446,7 +2472,11 @@ export interface CreateGroupResponse {
   course_id: number;
   name: string;
   description: string;
+  description_format: string;
   idnumber: string;
+  visibility: string;
+  participation: boolean;
+  has_enrolment_key: boolean;
 }
 
 export interface UpdateGroupResponse {
@@ -2454,7 +2484,11 @@ export interface UpdateGroupResponse {
   course_id: number;
   name: string;
   description: string;
+  description_format: string;
   idnumber: string;
+  visibility: string;
+  participation: boolean;
+  has_enrolment_key: boolean;
 }
 
 export interface DeleteGroupResponse {
