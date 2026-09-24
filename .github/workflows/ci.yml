@@ -20,18 +20,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: moodlia-cli
+      # Sibling repositories use the branch with this branch's name when it exists, so
+      # coordinated changes are tested together; otherwise main. The plugin uses the
+      # pinned release tag, or that branch until the tag is published.
+      - name: Resolve sibling refs
+        id: refs
+        shell: bash
+        run: |
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          pick() {
+            if git ls-remote --exit-code --heads "https://github.com/gafapa/$1.git" "$branch" >/dev/null 2>&1; then echo "$branch"; else echo main; fi
+          }
+          release="$(node -p "require('./moodlia-cli/package.json').moodliaPlugin.contractRelease")"
+          if git ls-remote --exit-code --tags https://github.com/gafapa/moodle-local_moodlia.git "refs/tags/$release" >/dev/null 2>&1; then
+            plugin="$release"
+          else
+            plugin="$(pick moodle-local_moodlia)"
+          fi
+          echo "core=$(pick moodle-core-cli)" >> "$GITHUB_OUTPUT"
+          echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+          echo "moodle-core-cli@$(pick moodle-core-cli), moodle-local_moodlia@$plugin"
       - uses: actions/checkout@v4
         with:
           repository: gafapa/moodle-core-cli
+          ref: ${{ steps.refs.outputs.core }}
           path: moodle-core-cli
-      - name: Read the pinned plugin release
-        id: plugin
-        shell: bash
-        run: echo "ref=$(node -p "require('./moodlia-cli/package.json').moodliaPlugin.contractRelease")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: gafapa/moodle-local_moodlia
-          ref: ${{ steps.plugin.outputs.ref }}
+          ref: ${{ steps.refs.outputs.plugin }}
           path: moodlia-moodle-plugin
       - uses: actions/setup-node@v4
         with:
