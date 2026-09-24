@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.4.0 - unreleased
+## 0.4.1 - 2026-09-24
+
+- When neither MoodlIA nor Core is reachable for a profile, the error now names
+  each provider's failure, for example
+  `No provider is available for profile school (moodlia: function_not_available: ...; core: connection_error: ...)`.
+  Before, it said only `No provider is available for profile school.`
+
+## 0.4.0 - 2026-09-24
 
 Breaking changes:
 

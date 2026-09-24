@@ -28,7 +28,12 @@ export class AdaptiveMoodleAdapter {
     }
     const available = ['moodlia', 'core'].find((name) => providers[name]?.available);
     if (!available) {
-      const error = new TypeError(`No provider is available for profile ${this.profileName ?? 'unknown'}.`);
+      const reasons = Object.entries(providers)
+        .map(([name, entry]) => `${name}: ${entry.error.code}: ${entry.error.message}`)
+        .join('; ');
+      const error = new TypeError(
+        `No provider is available for profile ${this.profileName ?? 'unknown'}${reasons ? ` (${reasons})` : ''}.`
+      );
       error.details = { providers };
       throw error;
     }

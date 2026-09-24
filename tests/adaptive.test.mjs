@@ -97,3 +97,26 @@ test('synchronization commands point to the moodlia-sync package', async () => {
   const help = await execFileAsync(process.execPath, [cli, 'capabilities', '--help']);
   assert.match(help.stdout, /moodlia-sync capabilities/);
 });
+
+test('adaptive discovery names each provider error when no provider is available', async () => {
+  const { AdaptiveMoodleAdapter } = await import('../adaptive/adaptive-adapter.mjs');
+  const failing = (code, message) => ({
+    async discoverSite() {
+      const error = new Error(message);
+      error.code = code;
+      throw error;
+    }
+  });
+  const adapter = new AdaptiveMoodleAdapter({
+    moodlia: failing('function_not_available', 'local_moodlia is not installed'),
+    core: failing('connection_error', 'connect ECONNREFUSED 127.0.0.1:1'),
+    profileName: 'school'
+  });
+  await assert.rejects(adapter.discoverSite(), (error) => {
+    assert.equal(error.message, 'No provider is available for profile school '
+      + '(moodlia: function_not_available: local_moodlia is not installed; '
+      + 'core: connection_error: connect ECONNREFUSED 127.0.0.1:1).');
+    assert.equal(error.details.providers.core.available, false);
+    return true;
+  });
+});
