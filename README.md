@@ -61,13 +61,15 @@ The package is intentionally small: install the Moodle plugin on the server firs
 
 ## Version 0.4
 
-Version `0.4.0` moves course synchronization to `moodlia-sync`, builds the REST client on the shared `moodle-core-cli/transport` kernel (one error class, streamed transfers, response limits, token redaction), and accepts `--<field>-file` for every text parameter. It requires `moodle-core-cli@0.4`, which has no native dependency. See the changelog for the migration table.
+Version `0.4.0` moves course synchronization to [`moodlia-sync`](https://github.com/gafapa/moodlia-sync), builds the REST client on the shared `moodle-core-cli/transport` kernel (one error class, streamed transfers, response limits, token redaction), and accepts `--<field>-file` for every text parameter. It requires `moodle-core-cli@0.4`, which has no native dependency. See the changelog for the migration table.
+
+Version `0.4.1` names each provider's failure when neither MoodlIA nor Core answers for a profile. It works with MoodlIA plugin `0.1.215`, whose operation contract it bundles.
 
 ## Version 0.3 Adaptive Scope
 
 Version `0.3.1` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, verified recovery, and stable machine-readable exit codes. The CLI does not embed an MCP server.
 
-Versions `0.3.2` to `0.3.7` contain the fixes found by live cross-version qualification between disposable Moodle 4.5 and 5.3 sites: the durable SQLite store stays open until asynchronous apply and resume settle, grouped `sync resume` routing, section identity during verification, Moodle 5.3 course-summary normalization, grouping membership course context, and canonical rawurlencoded `@@PLUGINFILE@@` references. Version `0.3.7` requires `moodle-core-cli@0.3.6`, and MoodlIA plugin `0.1.213` or later is needed for authenticated asset transfer. The evidence is recorded in the Core repository's `docs/CROSS-VERSION-QUALIFICATION.md`.
+Versions `0.3.2` to `0.3.7` contain the fixes found by live cross-version qualification between disposable Moodle 4.5 and 5.3 sites: the durable SQLite store stays open until asynchronous apply and resume settle, grouped `sync resume` routing, section identity during verification, Moodle 5.3 course-summary normalization, grouping membership course context, and canonical rawurlencoded `@@PLUGINFILE@@` references. Version `0.3.7` requires `moodle-core-cli@0.3.6`, and MoodlIA plugin `0.1.213` or later is needed for authenticated asset transfer. The evidence now lives in the `moodlia-sync` repository's `docs/CROSS-VERSION-QUALIFICATION.md`.
 
 ## Version 0.2 Transport Scope
 
