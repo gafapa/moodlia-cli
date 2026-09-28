@@ -406,4 +406,6 @@ npm run check
 npm run pack:check
 ```
 
-The test suite covers contract parameter validation, response validation, REST transport behavior, URL safety, and command-line validation.
+The test suite covers contract parameter validation, response validation, REST transport behavior, URL safety, and command-line validation. It needs no other repository: after `npm ci` it runs against the published `moodle-core-cli` in `package-lock.json`.
+
+CI runs two jobs. `check` runs the suite on this repository alone (Linux and Windows, Node 22.13 and 24) and must pass by itself. `siblings` runs it again against the `moodle-core-cli` source (the branch with the same name when it exists, otherwise `main`) and runs `npm run contract:check` against the plugin contract at the `moodliaPlugin.contractRelease` tag. To run the contract check locally, pass the plugin contract path or set `MOODLIA_PLUGIN_CONTRACT`.

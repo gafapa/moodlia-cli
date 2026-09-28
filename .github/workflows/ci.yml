@@ -12,6 +12,7 @@ permissions:
   contents: read
 
 jobs:
+  # This repository alone, against the published moodle-core-cli in package-lock.json.
   check:
     strategy:
       fail-fast: false
@@ -21,11 +22,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:coverage
+      - run: npm run pack:check
+      - run: npm audit --audit-level=high
+
+  # Integration with sibling sources: moodle-core-cli from the branch with this branch's
+  # name when it exists, otherwise main, and the plugin contract at the pinned release
+  # (or that branch until the tag is published).
+  siblings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
           path: moodlia-cli
-      # Sibling repositories use the branch with this branch's name when it exists, so
-      # coordinated changes are tested together; otherwise main. The plugin uses the
-      # pinned release tag, or that branch until the tag is published.
       - name: Resolve sibling refs
         id: refs
         shell: bash
@@ -55,22 +69,16 @@ jobs:
           path: moodlia-moodle-plugin
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-      - name: Install Core package dependencies
+          node-version: '24'
+      - name: Install Core from source
         working-directory: moodle-core-cli
         run: npm ci
-      - name: Install preview Core dependency
+      - name: Use the Core checkout
         working-directory: moodlia-cli
         run: |
           npm pkg set dependencies.moodle-core-cli="file:../moodle-core-cli"
           npm install --ignore-scripts
       - run: npm run check
         working-directory: moodlia-cli
-      - run: npm run test:coverage
-        working-directory: moodlia-cli
       - run: npm run contract:check
-        working-directory: moodlia-cli
-      - run: npm run pack:check
-        working-directory: moodlia-cli
-      - run: npm audit --audit-level=high
         working-directory: moodlia-cli
