@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.1 - 2026-10-15
+
+- Expand coverage to all browser runtime modules and require 95% overall line coverage, 90% branch coverage, 85% function coverage, and 90% line coverage for the browser component.
+- Add 63 tests for adaptive provider selection, audit/progress/completion workflows, immutable add-only enrolment plans, REST errors and credential redaction, file transfers, Core profile routing, and CLI validation before network access. Global line coverage increases from 77.70% to 96.70% without narrowing the measured source set.
+- Exercise authenticated IPC, malformed and multibyte frames, cancellation before queued execution, timeouts, file integrity, session recovery, duplicate daemons, and failure cleanup.
+- Reject unknown browser options, duplicate options, extra positionals, malformed tool arguments, and invalid byte limits before loading the optional component.
+- Preserve definitive Moodle navigation errors; report interrupted or oversized responses as uncertain outcomes without retrying writes.
+- Add synthetic end-to-end qualification against disposable Moodle 4.5.15/PostgreSQL 16.15 and Moodle 5.2.4/PostgreSQL 17.11 on ARM64, including HTTP permissions, CSRF, file transfers, typed arguments, and native WebMCP navigation. Remove owned remote resources after qualification.
+
+## 0.5.0 - 2026-10-15
+
+- Add an optional Playwright browser component with install/open/status/tools/call/download/close/uninstall commands.
+- Run all direct plugin operations with `--transport webmcp`, authenticated by a manually signed-in, visible Chromium session.
+- Keep Playwright out of the base dependency tree; retain a private local profile and authenticated pipe/socket between CLI invocations.
+- Support existing draft upload flags and native browser downloads with SHA-256 and no output overwrite. Keep navigation in the current tab.
+- Reject unsupported Core/adaptive WebMCP requests, block execution after cross-origin navigation, and never retry tool execution.
+- Add native browser integration tests for all 250 operation adapters using fictional results, session lifecycle, file transfers, and IPC authentication. Moodle-native server validation remains a separate plugin CI requirement.
+- Synchronize qualification metadata with the plugin 0.1.218 contract without changing operation parameters or results.
+
 ## 0.4.1 - 2026-09-24
 
 - When neither MoodlIA nor Core is reachable for a profile, the error now names

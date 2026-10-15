@@ -14,6 +14,7 @@ import {
   normalizeClientError
 } from '../client/moodle-rest-client.mjs';
 import { printCapabilitiesHelp, runCapabilities, syncMovedError } from './capabilities-command.mjs';
+import { browserCommand, createWebMcpClient } from './browser-component.mjs';
 import {
   printAdaptiveCourseAuditHelp,
   printAdaptiveCourseCompletionAuditHelp,
@@ -389,7 +390,7 @@ async function resolveUploadFile(prepared, client) {
   return normalizedOptions;
 }
 
-function buildParameters(operation, rawOptions) {
+function buildParameters(operation, rawOptions, encoding = 'form') {
   const normalizedOptions = { ...rawOptions };
 
   const parameterOptions = {};
@@ -407,6 +408,7 @@ function buildParameters(operation, rawOptions) {
 
   const localOptionNames = [
     'format',
+    'transport',
     'help',
     'no_validate_response',
     'raw',
@@ -430,7 +432,7 @@ function buildParameters(operation, rawOptions) {
     }
   }
 
-  return buildContractParameters(operation, parameterOptions);
+  return buildContractParameters(operation, parameterOptions, { encoding });
 }
 
 function describeOption(definition) {
@@ -457,6 +459,7 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
     console.log(`Usage: ${commandPrefix} <command> [options]`);
     console.log('');
     console.log('Commands:');
+    console.log('  browser <command>  Install or control the optional Playwright WebMCP component');
     console.log('  capabilities  Discover the Core and MoodlIA providers of a site profile');
     console.log('                (course synchronization is provided by the moodlia-sync package)');
     console.log('  course audit  Evidence-based adaptive course audit');
@@ -473,6 +476,7 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
     }
     console.log('');
     console.log('Global options:');
+    console.log('  --transport rest|webmcp  Direct plugin operations only (default: rest)');
     console.log('  --format json');
     console.log('  --no-validate-response');
     console.log('  --raw  Alias for --no-validate-response');
@@ -508,6 +512,7 @@ function printHelp(contract, operation = null, commandPrefix = 'moodlia') {
   console.log('  --max-upload-bytes <n>  optional; streamed upload limit (MOODLE_MAX_UPLOAD_BYTES; default unlimited)');
   console.log('  --max-download-bytes <n>  optional; streamed download limit (MOODLE_MAX_DOWNLOAD_BYTES; default 2 GiB)');
   console.log('  --format <string>  optional; one of: json');
+  console.log('  --transport <string>  optional; rest or webmcp (default: rest)');
   console.log('  --no-validate-response  optional; skip contract response validation');
   console.log('  --raw  optional; alias for --no-validate-response');
 }
@@ -565,8 +570,20 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
   loadEnvFile(path.join(process.cwd(), '.env'));
   loadEnvFile(path.join(rootDirectory, '.env'));
 
+  if (rawArguments[0] === 'browser') {
+    console.log(JSON.stringify(await browserCommand(rawArguments.slice(1)), null, 2));
+    return;
+  }
+
+  const transportOption = takeNamespaceOption(rawArguments, 'transport');
+  if (hasCliOption(rawArguments, 'transport') && !['rest', 'webmcp'].includes(transportOption.value)) {
+    throw new MoodleClientError('invalid_parameters', '--transport must be rest or webmcp.');
+  }
+  const webmcp = transportOption.value === 'webmcp';
+
   if (rawArguments[0] === 'core') {
-    const coreArguments = rawArguments.length === 1 ? ['--help'] : rawArguments.slice(1);
+    if (webmcp) throw new MoodleClientError('provider_unavailable', 'WebMCP supports MoodlIA plugin operations; Core uses REST.');
+    const coreArguments = transportOption.remaining.length === 1 ? ['--help'] : transportOption.remaining.slice(1);
     await runMoodleCoreCli(prepareCoreNamespaceArguments(coreArguments));
     return;
   }
@@ -588,6 +605,7 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
   const enrolmentSyncCommand = workflowRouting && ((command === 'enrolments' && positional[1] === 'sync') || command === 'sync-enrolments');
 
   if (workflowRouting && command === 'capabilities') {
+    if (webmcp) throw new MoodleClientError('provider_unavailable', 'Use browser tools for WebMCP discovery.');
     if (options.help) {
       printCapabilitiesHelp();
       return;
@@ -601,6 +619,7 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
     throw syncMovedError();
   }
   if (auditCommand || progressCommand || completionAuditCommand || completionRepairCommand || enrolmentSyncCommand) {
+    if (webmcp) throw new MoodleClientError('provider_unavailable', 'Adaptive workflows currently use REST. Use direct plugin operations with WebMCP.');
     if (options.help) {
       if (auditCommand) printAdaptiveCourseAuditHelp();
       else if (progressCommand) printAdaptiveCourseProgressHelp();
@@ -650,7 +669,7 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
   const prepared = prepareAttachmentFileOption(operation, prepareUploadFileOptions(operation, textOptions));
   buildParameters(operation, prepared.options);
   const byteOption = (name) => (options[name] === undefined ? undefined : Number(options[name]));
-  const client = createMoodleRestClient({
+  const clientOptions = {
     baseUrl: process.env.MOODLE_BASE_URL,
     token: process.env.MOODLE_REST_TOKEN,
     contract,
@@ -660,9 +679,10 @@ export async function runMoodliaCli(rawArguments = process.argv.slice(2)) {
     maximumResponseBytes: byteOption('max_response_bytes'),
     maximumUploadBytes: byteOption('max_upload_bytes'),
     maximumDownloadBytes: byteOption('max_download_bytes')
-  });
+  };
+  const client = webmcp ? await createWebMcpClient(clientOptions) : createMoodleRestClient(clientOptions);
   const resolvedOptions = await resolveUploadFile(prepared, client);
-  const parameters = buildParameters(operation, resolvedOptions);
+  const parameters = buildParameters(operation, resolvedOptions, webmcp ? 'json' : 'form');
   const payload = await client.callOperation(operation.name, parameters);
   console.log(JSON.stringify(payload, null, 2));
   process.exitCode = exitCodeForResult(payload);

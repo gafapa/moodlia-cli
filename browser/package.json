@@ -1,0 +1,12 @@
+{
+  "name": "moodlia-browser",
+  "version": "0.1.1",
+  "description": "Optional local Playwright WebMCP component for the MoodlIA CLI",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "main": "./index.mjs",
+  "exports": "./index.mjs",
+  "files": ["*.mjs", "README.md"],
+  "engines": {"node": ">=22.13"},
+  "dependencies": {"playwright": "1.64.1"}
+}

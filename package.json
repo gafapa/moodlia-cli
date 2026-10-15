@@ -1,7 +1,7 @@
 {
   "name": "moodlia",
-  "version": "0.4.1",
-  "description": "Command-line and Node client for MoodlIA Moodle automation over REST.",
+  "version": "0.5.1",
+  "description": "MoodlIA Moodle CLI with REST and optional browser WebMCP automation.",
   "type": "module",
   "license": "GPL-3.0-or-later",
   "author": "Pablo Gallego",
@@ -72,6 +72,7 @@
   },
   "files": [
     "cli/",
+    "browser/",
     "core/",
     "client/",
     "adaptive/",
@@ -90,12 +91,14 @@
   ],
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "test:webmcp:browser": "node tests/webmcp-browser.mjs",
     "types:generate": "node tools/generate-operation-types.mjs",
     "types:check": "node tools/generate-operation-types.mjs --check",
     "check": "node --check cli/moodlia.mjs && node --check cli/runner.mjs && node --check client/moodle-rest-client.mjs && npm run types:check && npm run types:compile && npm test",
     "pack:check": "npm pack --dry-run",
     "types:compile": "tsc --noEmit --skipLibCheck false --moduleResolution nodenext --module nodenext --target es2022 client/moodle-rest-client.d.ts",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=73 --test-coverage-include=cli/** --test-coverage-include=client/*.mjs --test-coverage-include=adaptive/** --test-coverage-include=adapters/** tests/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=90 --test-coverage-functions=85 --test-coverage-include=cli/** --test-coverage-include=client/*.mjs --test-coverage-include=adaptive/** --test-coverage-include=adapters/** --test-coverage-include=browser/** tests/*.test.mjs",
+    "test:coverage:browser": "node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-include=browser/** tests/browser-*.test.mjs",
     "contract:check": "node tools/check-plugin-contract.mjs"
   },
   "engines": {
@@ -112,6 +115,6 @@
     "typescript": "^7.0.2"
   },
   "moodliaPlugin": {
-    "contractRelease": "v0.1.215"
+    "contractRelease": "v0.1.219"
   }
 }

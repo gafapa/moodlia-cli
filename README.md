@@ -53,11 +53,26 @@ Completion audit and repair are also adaptive. An authorized MoodlIA site provid
 
 The Moodle-hosted MCP remains a single-site operation surface.
 
-Command-line and Node client for MoodlIA Moodle automation over REST.
+Command-line and Node client for MoodlIA Moodle automation over REST and optional browser WebMCP.
 
-This package contains the public Node CLI, the reusable REST client, generated TypeScript declarations, and the canonical command contract needed by external users. MCP integrations remain a separate server-side surface and are not bundled into the CLI package. This package does not include server-side Moodle plugin files, deployment scripts, tests, or browser automation.
+This package contains the public Node CLI, the reusable REST client, generated TypeScript declarations, and the canonical command contract needed by external users. It also bundles the source of an optional Playwright WebMCP component; its dependencies and Chromium are installed only with `moodlia browser install`. Server-side Moodle plugin files, deployment scripts, and tests are not bundled.
 
-The package is intentionally small: install the Moodle plugin on the server first, then use this package from developer machines, CI jobs, or automation workers.
+Install the Moodle plugin on the server first, then use this package from developer machines, CI jobs, or automation workers. REST remains the default transport.
+
+For a visible browser session, use `moodlia browser install`, then
+`moodlia browser open --url https://moodle.example`. Sign in manually and run
+direct plugin commands with `--transport webmcp`. The optional component reuses
+that local session between commands, supports file transfers and same-tab
+navigation, and requires WebMCP enabled in the Moodle plugin settings.
+See [the browser component guide](browser/README.md) for commands, boundaries,
+local profile handling, and validation limits.
+
+Version 0.5.1 adds strict browser command validation and coverage gates for the
+full browser runtime. The 174-test suite reaches 96.70% global line coverage;
+`npm run test:coverage` requires 95% lines, 90% branches, and 85% functions.
+See [the WebMCP qualification report](docs/webmcp-validation-2026-10-15.md)
+for measured coverage, native Moodle results, known legacy notices, and verified
+removal of the disposable Oracle Docker lab.
 
 ## Version 0.4
 
