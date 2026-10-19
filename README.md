@@ -1,8 +1,10 @@
 # MoodlIA CLI
 
+Current package: **0.5.1**. The base CLI includes Core and MoodlIA adapters; browser WebMCP is an optional component installed separately. Cross-site synchronization lives in `moodlia-sync`, not in the current CLI package. The bundled MoodlIA contract contains 250 operations and its qualification reference is recorded in `package.json` under `moodliaPlugin.contractRelease`.
+
 ## Adaptive Moodle profiles
 
-MoodlIA 0.3 adds an adaptive path alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
+Since MoodlIA 0.3, an adaptive path is available alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
 
 ```json
 {
@@ -80,7 +82,7 @@ Version `0.4.0` moves course synchronization to [`moodlia-sync`](https://github.
 
 Version `0.4.1` names each provider's failure when neither MoodlIA nor Core answers for a profile. It works with MoodlIA plugin `0.1.215`, whose operation contract it bundles.
 
-## Version 0.3 Adaptive Scope
+## Historical Version 0.3 Adaptive Scope
 
 Version `0.3.1` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, verified recovery, and stable machine-readable exit codes. The CLI does not embed an MCP server.
 
@@ -392,14 +394,14 @@ const contract = loadContractFromFile('./node_modules/moodlia/contract/operation
 
 ## Published Files
 
-The npm package includes only:
+The npm package includes the directories declared in `package.json.files`:
 
-- `cli/moodlia.mjs`: executable command-line entry point.
-- `client/moodle-rest-client.mjs`: reusable REST client.
-- `client/moodle-rest-client.d.ts`: TypeScript declarations for the REST client.
-- `client/generated/operation-types.d.ts`: generated request and response types per operation.
-- `contract/operations.json`: publishable command contract.
-- `README.md` and `LICENSE`.
+- `cli/`: executable entry point and command routing.
+- `client/`: REST client, TypeScript declarations, and generated operation types.
+- `core/`, `adaptive/`, and `adapters/`: shared Core exports, profile routing, capability selection, and MoodlIA adapters.
+- `browser/`: optional WebMCP component source and its separate dependency lockfile. Playwright and Chromium are not installed by the base package.
+- `contract/`: the publishable operation contract.
+- `README.md`, `CHANGELOG.md`, and `LICENSE`.
 
 It intentionally excludes server plugin source, local deployment automation, test fixtures, reports, local env files, and generated temporary output.
 
