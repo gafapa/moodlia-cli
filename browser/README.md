@@ -5,6 +5,14 @@ MoodlIA Moodle plugin through Chromium's experimental WebMCP API and Playwright
 1.64.1. The base CLI has no Playwright dependency. The component is bundled as
 source and installed, with its dependencies and Chromium, only on request.
 
+## Status
+
+Optional, implemented browser component. WebMCP remains experimental; installation and live Moodle qualification are separate from the base CLI.
+
+## Getting started
+
+Install the base `moodlia` CLI first. Run `moodlia browser install`, enable WebMCP in the Moodle plugin, then open the selected Moodle site and sign in manually. The commands below use a dedicated browser profile.
+
 ## Usage
 
 ```bash
@@ -32,7 +40,42 @@ permissions. Plugin 0.1.218 or newer is required for session draft uploads.
 `browser tools` waits up to ten seconds for registration. The current course is
 a hint; operations can target any course the user is allowed to access.
 
-## Local Session
+## Development
+
+### Validation
+
+The overall unit coverage gates are 95% lines, 90% branches and 85% functions
+for the CLI, shared client, adaptive, adapter and browser modules, and 90% lines
+for all five browser runtime modules (`daemon`, `index`, `operations`, `protocol`,
+and `server`). Run `npm run test:coverage` and `npm run test:coverage:browser`
+from the CLI repository. Cases cover malformed IPC, authentication, UTF-8
+boundaries, timeouts, queued cancellation, concurrent writes, dead locks,
+manual browser close, failed startup, permissions on file transfers, and
+temporary-file cleanup. Malformed browser commands are rejected locally before
+loading the optional component.
+
+`node tests/webmcp-browser.mjs` from the CLI repository installs the component
+under ignored `node_modules/.browser-validation` and tests a visible Chromium
+instance against a loopback fixture with fictional data. On Linux, run it under
+`xvfb-run -a`. It invokes all 250 CLI operations with contract-shaped results,
+checks session reuse across CLI processes, JSON argument types, same-tab
+navigation, file bytes and draft propagation, download SHA-256/no-overwrite,
+write non-retry, IPC authentication, and close/reopen.
+
+The loopback fixture tests do not execute Moodle's PHP operations. Separate
+real-site qualification passed on disposable Moodle 4.5.15/PostgreSQL 16.15
+and Moodle 5.2.4/PostgreSQL 17.11, with 103 PHP tests and 11 browser/CLI checks
+per profile. Both sites, their data, and the SSH tunnel were removed afterwards.
+See `docs/webmcp-validation-2026-10-15.md` in the CLI repository for exact evidence
+and remaining coverage limitations. The full supported-version CI matrix is a
+separate qualification. WebMCP remains experimental.
+
+References: [Playwright WebMCP](https://playwright.dev/docs/api/class-webmcp),
+[Chrome WebMCP](https://developer.chrome.com/docs/ai/webmcp/imperative-api).
+
+## Security and privacy
+
+### Local session
 
 One visible Chromium instance uses a dedicated persistent profile, separate from
 the user's daily browser. A detached Node process retains that instance between
@@ -70,32 +113,10 @@ Inspect Moodle before repeating it. Closing the browser does not roll back a
 server operation. This transport does not implement MCP protocol resources,
 prompts, or server notifications; it exposes the plugin's operation tools.
 
-## Validation
+## Documentation
 
-The unit coverage gates are 77% for the CLI and shared client modules and 90%
-for all five browser runtime modules (`daemon`, `index`, `operations`, `protocol`,
-and `server`). Run `npm run test:coverage` and `npm run test:coverage:browser`
-from the CLI repository. Cases cover malformed IPC, authentication, UTF-8
-boundaries, timeouts, queued cancellation, concurrent writes, dead locks,
-manual browser close, failed startup, permissions on file transfers, and
-temporary-file cleanup. Malformed browser commands are rejected locally before
-loading the optional component.
+See the [CLI README](../README.md), [WebMCP qualification record](../docs/webmcp-validation-2026-10-15.md), and [MoodlIA plugin](https://github.com/gafapa/moodle-local_moodlia).
 
-`node tests/webmcp-browser.mjs` from the CLI repository installs the component
-under ignored `node_modules/.browser-validation` and tests a visible Chromium
-instance against a loopback fixture with fictional data. On Linux, run it under
-`xvfb-run -a`. It invokes all 250 CLI operations with contract-shaped results,
-checks session reuse across CLI processes, JSON argument types, same-tab
-navigation, file bytes and draft propagation, download SHA-256/no-overwrite,
-write non-retry, IPC authentication, and close/reopen.
+## License
 
-The loopback fixture tests do not execute Moodle's PHP operations. Separate
-real-site qualification passed on disposable Moodle 4.5.15/PostgreSQL 16.15
-and Moodle 5.2.4/PostgreSQL 17.11, with 103 PHP tests and 11 browser/CLI checks
-per profile. Both sites, their data, and the SSH tunnel were removed afterwards.
-See `docs/webmcp-validation-2026-10-15.md` in the CLI repository for exact evidence
-and remaining coverage limitations. The full supported-version CI matrix is a
-separate qualification. WebMCP remains experimental.
-
-References: [Playwright WebMCP](https://playwright.dev/docs/api/class-webmcp),
-[Chrome WebMCP](https://developer.chrome.com/docs/ai/webmcp/imperative-api).
+Part of MoodlIA CLI, licensed under GPL-3.0-or-later. See [LICENSE](../LICENSE).

@@ -1,8 +1,67 @@
 # MoodlIA CLI
 
-Current package: **0.5.1**. The base CLI includes Core and MoodlIA adapters; browser WebMCP is an optional component installed separately. Cross-site synchronization lives in `moodlia-sync`, not in the current CLI package. The bundled MoodlIA contract contains 250 operations and its qualification reference is recorded in `package.json` under `moodliaPlugin.contractRelease`.
+Command-line interface and Node.js client for Moodle Core services and the MoodlIA plugin, with an optional browser WebMCP component.
 
-## Adaptive Moodle profiles
+[Status](#status) · [Getting started](#getting-started) · [Usage](#usage) · [Development](#development) · [Security and privacy](#security-and-privacy) · [Documentation](#documentation) · [License](#license)
+
+## Status
+
+Implemented CLI and Node.js client. Package version: `0.5.1`; the bundled MoodlIA contract contains 250 operations. WebMCP is optional and experimental. Cross-site synchronization is maintained in `moodlia-sync`.
+
+## Getting started
+
+### Requirements
+
+- Node.js 22.13 or newer.
+- Moodle 4.5 or later. Direct MoodlIA commands require the local plugin; adaptive operations can use exact Core services when it is absent.
+- A limited Moodle Core or MoodlIA REST token for each configured site.
+
+### Installation
+
+```bash
+npm install -g moodlia
+```
+
+For a project-local installation:
+
+```bash
+npm install moodlia
+```
+
+### Configuration
+
+Set the Moodle URL and REST token in your shell:
+
+```bash
+export MOODLE_BASE_URL="https://your-moodle.example"
+export MOODLE_REST_TOKEN="your-token"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:MOODLE_BASE_URL = "https://your-moodle.example"
+$env:MOODLE_REST_TOKEN = "your-token"
+```
+
+The CLI also reads a local `.env` file from the current working directory when present:
+
+```text
+MOODLE_BASE_URL=https://your-moodle.example
+MOODLE_REST_TOKEN=your-token
+```
+
+Configuration values:
+
+- `MOODLE_BASE_URL`: Moodle site base URL, for example `https://moodle.example.edu`.
+- `MOODLE_REST_TOKEN`: Moodle web service token authorised for MoodlIA.
+- `CLI_OUTPUT_FORMAT`: optional default output format. The default is `json`.
+
+`MOODLE_BASE_URL` must use HTTPS for remote hosts and may include a Moodle installation subdirectory such as `https://example.edu/learning`. Loopback HTTP is allowed for local development. REST requests do not follow redirects so that bearer tokens cannot be forwarded to an unexpected destination.
+
+## Usage
+
+### Adaptive Moodle profiles
 
 Since MoodlIA 0.3, an adaptive path is available alongside every existing plugin command. A profile may configure separate Core and MoodlIA tokens. The CLI discovers both services and selects MoodlIA for an exact demonstrated capability, otherwise it uses an exact Core implementation when one is available.
 
@@ -76,83 +135,6 @@ See [the WebMCP qualification report](docs/webmcp-validation-2026-10-15.md)
 for measured coverage, native Moodle results, known legacy notices, and verified
 removal of the disposable Oracle Docker lab.
 
-## Version 0.4
-
-Version `0.4.0` moves course synchronization to [`moodlia-sync`](https://github.com/gafapa/moodlia-sync), builds the REST client on the shared `moodle-core-cli/transport` kernel (one error class, streamed transfers, response limits, token redaction), and accepts `--<field>-file` for every text parameter. It requires `moodle-core-cli@0.4`, which has no native dependency. See the changelog for the migration table.
-
-Version `0.4.1` names each provider's failure when neither MoodlIA nor Core answers for a profile. It works with MoodlIA plugin `0.1.215`, whose operation contract it bundles.
-
-## Historical Version 0.3 Adaptive Scope
-
-Version `0.3.1` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, verified recovery, and stable machine-readable exit codes. The CLI does not embed an MCP server.
-
-Versions `0.3.2` to `0.3.7` contain the fixes found by live cross-version qualification between disposable Moodle 4.5 and 5.3 sites: the durable SQLite store stays open until asynchronous apply and resume settle, grouped `sync resume` routing, section identity during verification, Moodle 5.3 course-summary normalization, grouping membership course context, and canonical rawurlencoded `@@PLUGINFILE@@` references. Version `0.3.7` requires `moodle-core-cli@0.3.6`, and MoodlIA plugin `0.1.213` or later is needed for authenticated asset transfer. The evidence now lives in the `moodlia-sync` repository's `docs/CROSS-VERSION-QUALIFICATION.md`.
-
-## Version 0.2 Transport Scope
-
-Version `0.2.7` keeps the package REST-only and adds identity-preserving File
-resource replacement through `update-resource --upload-file`. Version `0.2.6`
-added UTF-8 `--intro-file` and `--activity-file` input for assignment authoring
-content, plus UTF-8 `--content-file` input for content operations such as Book
-chapters. Version `0.2.5` added streamed editor-file uploads to Book chapter creation and updates.
-Version `0.2.4` added assignment name, description, activity-instruction, and
-editor-file updates. Version `0.2.3` added native section summary file uploads
-and UTF-8 `--summary-file` input.
-Version `0.2.0` removed the
-exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
-continue through the independent Moodle-hosted endpoint.
-
-## Requirements
-
-- Node.js 22.13 or newer.
-- Moodle 4.5 or later. Direct MoodlIA commands require the local plugin; adaptive operations can use exact Core services when it is absent.
-- A limited Moodle Core or MoodlIA REST token for each configured site.
-
-## Installation
-
-```bash
-npm install -g moodlia
-```
-
-For a project-local installation:
-
-```bash
-npm install moodlia
-```
-
-## Configuration
-
-Set the Moodle URL and REST token in your shell:
-
-```bash
-export MOODLE_BASE_URL="https://your-moodle.example"
-export MOODLE_REST_TOKEN="your-token"
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:MOODLE_BASE_URL = "https://your-moodle.example"
-$env:MOODLE_REST_TOKEN = "your-token"
-```
-
-The CLI also reads a local `.env` file from the current working directory when present:
-
-```text
-MOODLE_BASE_URL=https://your-moodle.example
-MOODLE_REST_TOKEN=your-token
-```
-
-Configuration values:
-
-- `MOODLE_BASE_URL`: Moodle site base URL, for example `https://moodle.example.edu`.
-- `MOODLE_REST_TOKEN`: Moodle web service token authorised for MoodlIA.
-- `CLI_OUTPUT_FORMAT`: optional default output format. The default is `json`.
-
-`MOODLE_BASE_URL` must use HTTPS for remote hosts and may include a Moodle installation subdirectory such as `https://example.edu/learning`. Loopback HTTP is allowed for local development. REST requests do not follow redirects so that bearer tokens cannot be forwarded to an unexpected destination.
-
-## Usage
-
 ```bash
 moodlia get-current-user
 moodlia get-courses --limit 10
@@ -194,7 +176,7 @@ moodlia update-course --course-id 42 --summary "<p>Updated summary</p>" --summar
 moodlia create-question --category-id 12 --context-id 34 --question-type multichoice --name "Capital city" --question-text "<p>Choose one.</p>" --options "{\"answers\":[{\"text\":\"Madrid\",\"fraction\":1},{\"text\":\"Paris\",\"fraction\":0}]}"
 ```
 
-## Capabilities
+### Capabilities
 
 The package currently exposes 247 CLI commands generated from the shared operation contract:
 
@@ -211,7 +193,7 @@ The three additional synchronization support reads expose contextual capability 
 
 Run `moodlia --help` for the exact command list. The bundled `contract/operations.json` file contains parameter schemas, return schemas, command names, and enum values.
 
-## Common Workflows
+### Common workflows
 
 Upload a local file without placing its base64 content on the command line:
 
@@ -366,7 +348,7 @@ $options = '{ "content": "<p>Hello from PowerShell.</p>" }'
 
 Project repository: https://github.com/gafapa/moodlia-cli
 
-## Programmatic Use
+### Programmatic use
 
 ```js
 import { createMoodleClient } from 'moodlia';
@@ -392,7 +374,35 @@ import { createMoodleClient, loadContractFromFile } from 'moodlia';
 const contract = loadContractFromFile('./node_modules/moodlia/contract/operations.json');
 ```
 
-## Published Files
+### Version 0.4
+
+Version `0.4.0` moves course synchronization to [`moodlia-sync`](https://github.com/gafapa/moodlia-sync), builds the REST client on the shared `moodle-core-cli/transport` kernel (one error class, streamed transfers, response limits, token redaction), and accepts `--<field>-file` for every text parameter. It requires `moodle-core-cli@0.4`, which has no native dependency. See the changelog for the migration table.
+
+Version `0.4.1` names each provider's failure when neither MoodlIA nor Core answers for a profile. It works with MoodlIA plugin `0.1.215`, whose operation contract it bundles.
+
+### Historical version 0.3 adaptive scope
+
+Version `0.3.1` keeps every direct command REST-only and adds adaptive profiles, shared no-backup synchronization, contextual MoodlIA capability discovery, immutable plans, drift protection, persistent mappings and jobs, verified recovery, and stable machine-readable exit codes. The CLI does not embed an MCP server.
+
+Versions `0.3.2` to `0.3.7` contain the fixes found by live cross-version qualification between disposable Moodle 4.5 and 5.3 sites: the durable SQLite store stays open until asynchronous apply and resume settle, grouped `sync resume` routing, section identity during verification, Moodle 5.3 course-summary normalization, grouping membership course context, and canonical rawurlencoded `@@PLUGINFILE@@` references. Version `0.3.7` requires `moodle-core-cli@0.3.6`, and MoodlIA plugin `0.1.213` or later is needed for authenticated asset transfer. The evidence now lives in the `moodlia-sync` repository's `docs/CROSS-VERSION-QUALIFICATION.md`.
+
+### Version 0.2 transport scope
+
+Version `0.2.7` keeps the package REST-only and adds identity-preserving File
+resource replacement through `update-resource --upload-file`. Version `0.2.6`
+added UTF-8 `--intro-file` and `--activity-file` input for assignment authoring
+content, plus UTF-8 `--content-file` input for content operations such as Book
+chapters. Version `0.2.5` added streamed editor-file uploads to Book chapter creation and updates.
+Version `0.2.4` added assignment name, description, activity-instruction, and
+editor-file updates. Version `0.2.3` added native section summary file uploads
+and UTF-8 `--summary-file` input.
+Version `0.2.0` removed the
+exported `McpTransport` and `createMoodleMcpClient` APIs. MCP integrations
+continue through the independent Moodle-hosted endpoint.
+
+## Development
+
+### Published files
 
 The npm package includes the directories declared in `package.json.files`:
 
@@ -405,18 +415,9 @@ The npm package includes the directories declared in `package.json.files`:
 
 It intentionally excludes server plugin source, local deployment automation, test fixtures, reports, local env files, and generated temporary output.
 
-## Security
-
-- Keep Moodle tokens in environment variables or local uncommitted env files.
-- Do not pass tokens as command arguments because shells and CI systems may record them.
-- Use a token with only the Moodle capabilities needed for the workflows you automate.
-- Treat JSON command output as Moodle data; it may include course, activity, grade, or participant information depending on the operation and token permissions.
-
-## Development
-
 The CLI, REST client, declarations, and tests are maintained in this repository. Keep the bundled operation contract aligned with the Moodle plugin before publishing a release.
 
-## Quality Checks
+### Quality checks
 
 ```bash
 npm run check
@@ -426,3 +427,30 @@ npm run pack:check
 The test suite covers contract parameter validation, response validation, REST transport behavior, URL safety, and command-line validation. It needs no other repository: after `npm ci` it runs against the published `moodle-core-cli` in `package-lock.json`.
 
 CI runs two jobs. `check` runs the suite on this repository alone (Linux and Windows, Node 22.13 and 24) and must pass by itself. `siblings` runs it again against the `moodle-core-cli` source (the branch with the same name when it exists, otherwise `main`) and runs `npm run contract:check` against the plugin contract at the `moodliaPlugin.contractRelease` tag. To run the contract check locally, pass the plugin contract path or set `MOODLIA_PLUGIN_CONTRACT`.
+
+## Security and privacy
+
+### Security
+
+- Keep Moodle tokens in environment variables or local uncommitted env files.
+- Do not pass tokens as command arguments because shells and CI systems may record them.
+- Use a token with only the Moodle capabilities needed for the workflows you automate.
+- Treat JSON command output as Moodle data; it may include course, activity, grade, or participant information depending on the operation and token permissions.
+
+## Documentation
+
+- [Project Pages](https://gafapa.github.io/moodlia-cli/)
+
+Build the repository documentation portal with `python tools/build-project-page.py`. Its status comes from this README; purpose and first steps are maintained in `docs/project-page.json`. The `pages.yml` workflow publishes the portal without deploying the application or changing `moodlia.com`.
+
+Connects [Core](https://github.com/gafapa/moodle-core-cli) and the [MoodlIA plugin](https://github.com/gafapa/moodle-local_moodlia); [Sync](https://github.com/gafapa/moodlia-sync) adds cross-site planning and execution.
+
+- [Source code](https://github.com/gafapa/moodlia-cli)
+- [Issue tracker](https://github.com/gafapa/moodlia-cli/issues)
+- [MoodlIA website](https://moodlia.com)
+- [browser/README.md](browser/README.md)
+- [CHANGELOG.md](CHANGELOG.md)
+
+## License
+
+Released under the GNU General Public License v3 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
