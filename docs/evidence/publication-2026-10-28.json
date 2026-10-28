@@ -1,0 +1,26 @@
+{
+  "verified_at": "2026-10-28T22:38:24.358076+00:00",
+  "package": "moodlia",
+  "version": "0.5.2",
+  "latest": "0.5.2",
+  "source_commit": "095f2fba61cfa93e2e9b9b269f91b47a9c6051a3",
+  "plugin_contract_release": "v0.1.222",
+  "ci_run": 40776825039,
+  "registry": {
+    "version": "0.5.2",
+    "dist.integrity": "sha512-TNLavNJy5YYHJuto6+/2vtDpeoypm081oYRHeX53Ml0Us6uYgrAI6lrYqhtX0fFBh9roIyyGIcP2WtA03xn0nw==",
+    "dist.shasum": "0de1a7a7b044f9d4cbbc695758cc2f2e1a09b8a1",
+    "dist.tarball": "https://registry.npmjs.org/moodlia/-/moodlia-0.5.2.tgz",
+    "dist-tags": {
+      "latest": "0.5.2"
+    }
+  },
+  "registry_tarball_matches_published_artifact": true,
+  "sha256": "ea3f541d7a7e1ed6c8d0352c02c1e4d6aa41e0f59a8e7b87be168da712ed8abc",
+  "clean_install": {
+    "ignore_scripts": true,
+    "packages_added": 2,
+    "list_users_help_passed": true,
+    "set_user_suspended_help_passed": true
+  }
+}
