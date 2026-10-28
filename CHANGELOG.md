@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 - 2026-10-28
+
+- Synchronize the plugin contract and generated TypeScript types for `list-users`
+  and `set-user-suspended`, requiring plugin build `2026102800` or later.
+- Document user management and verify CLI filter and boolean encoding over REST.
+
 ## 0.5.1 - 2026-10-15
 
 - Expand coverage to all browser runtime modules and require 95% overall line coverage, 90% branch coverage, 85% function coverage, and 90% line coverage for the browser component.

@@ -1,6 +1,6 @@
 {
   "name": "moodlia",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "MoodlIA Moodle CLI with REST and optional browser WebMCP automation.",
   "type": "module",
   "license": "GPL-3.0-or-later",
@@ -80,7 +80,8 @@
     "contract/",
     "CHANGELOG.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "docs/user-management.md"
   ],
   "keywords": [
     "moodle",
@@ -115,6 +116,6 @@
     "typescript": "^7.0.2"
   },
   "moodliaPlugin": {
-    "contractRelease": "v0.1.219"
+    "contractRelease": "v0.1.222"
   }
 }

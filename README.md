@@ -6,7 +6,7 @@ Command-line interface and Node.js client for Moodle Core services and the Moodl
 
 ## Status
 
-Implemented CLI and Node.js client. Package version: `0.5.1`; the bundled MoodlIA contract contains 250 operations. WebMCP is optional and experimental. Cross-site synchronization is maintained in `moodlia-sync`.
+Implemented CLI and Node.js client. Package version: `0.5.2`; the bundled MoodlIA contract contains 252 operations. WebMCP is optional and experimental. Cross-site synchronization is maintained in `moodlia-sync`.
 
 ## Getting started
 
@@ -454,3 +454,7 @@ Connects [Core](https://github.com/gafapa/moodle-core-cli) and the [MoodlIA plug
 ## License
 
 Released under the GNU General Public License v3 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
+
+## User management
+
+Use `moodlia plugin list-users` to search local accounts and `moodlia plugin set-user-suspended --user-id 42 --suspended true` to suspend an account (`false` to reactivate). Existing create, update, delete, enrolment, role, and cohort commands remain available. The new commands require plugin build `2026102800` or later. See [user management](docs/user-management.md) for filters, permissions, and examples.
