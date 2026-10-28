@@ -98,7 +98,7 @@ try {
     assert.equal(result.code, 0, `${operation.name}: ${result.stderr}`);
     assert.deepEqual(JSON.parse(result.stdout), sampleReturnValue(operation.returns));
   }
-  assert.equal(new Set(operations.map(entry => entry.name)).size, 250);
+  assert.deepEqual(new Set(operations.map(entry => entry.name)), new Set(contract.operations.map(operation => operation.name)));
   await cli('get-course-contents', '--course-id', '99', '--transport', 'webmcp');
   assert.equal(operations.at(-1).arguments.course_id, 99);
   await cli('browser', 'call', 'moodlia_open_page', '--arguments', JSON.stringify({ destination: 'course', course_id: 99 }));
@@ -128,7 +128,7 @@ try {
   await cli('browser', 'close');
   await cli('browser', 'open', '--url', `${base}/moodle`);
   assert.equal((await cli('browser', 'status')).running, true);
-  console.log('PASS: all 250 CLI operations over native WebMCP with contract-shaped fictional responses, optional install, persistent session, typed JSON parameters, same-tab navigation, CLI multipart upload bytes/draft propagation, no write retries, IPC authentication, and reopen.');
+  console.log(`PASS: all ${contract.operations.length} CLI operations over native WebMCP with contract-shaped fictional responses, optional install, persistent session, typed JSON parameters, same-tab navigation, CLI multipart upload bytes/draft propagation, no write retries, IPC authentication, and reopen.`);
 } finally {
   await cli('browser', 'close').catch(() => {});
   await fs.unlink(fixtureFile).catch(() => {});
