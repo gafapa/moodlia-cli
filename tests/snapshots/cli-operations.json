@@ -2264,6 +2264,92 @@
     },
     "stderr": null
   },
+  "backup_course_module": {
+    "argv": [
+      "plugin",
+      "backup-course-module",
+      "--course-id",
+      "1",
+      "--module-id",
+      "1"
+    ],
+    "exit_code": 0,
+    "request": {
+      "course_id": "1",
+      "module_id": "1",
+      "moodlewsrestformat": "json",
+      "wsfunction": "local_moodlia_backup_course_module"
+    },
+    "stdout": {
+      "course_id": 7,
+      "module_id": 7,
+      "module_name": "sample",
+      "section_number": 7,
+      "file_id": 7,
+      "filename": "sample",
+      "url": "sample",
+      "filepath": "sample",
+      "filesize": 7,
+      "mimetype": "sample",
+      "time_modified": 7
+    },
+    "stderr": null
+  },
+  "backup_course_section": {
+    "argv": [
+      "plugin",
+      "backup-course-section",
+      "--course-id",
+      "1",
+      "--section-number",
+      "1"
+    ],
+    "exit_code": 0,
+    "request": {
+      "course_id": "1",
+      "moodlewsrestformat": "json",
+      "section_number": "1",
+      "wsfunction": "local_moodlia_backup_course_section"
+    },
+    "stdout": {
+      "course_id": 7,
+      "section_id": 7,
+      "section_number": 7,
+      "file_id": 7,
+      "filename": "sample",
+      "url": "sample",
+      "filepath": "sample",
+      "filesize": 7,
+      "mimetype": "sample",
+      "time_modified": 7
+    },
+    "stderr": null
+  },
+  "restore_course_item_backup": {
+    "argv": [
+      "plugin",
+      "restore-course-item-backup",
+      "--backup-file-id",
+      "1",
+      "--target-course-id",
+      "1"
+    ],
+    "exit_code": 0,
+    "request": {
+      "backup_file_id": "1",
+      "moodlewsrestformat": "json",
+      "target_course_id": "1",
+      "wsfunction": "local_moodlia_restore_course_item_backup"
+    },
+    "stdout": {
+      "course_id": 7,
+      "backup_type": "sample",
+      "restored": true,
+      "modules_json": "sample",
+      "warnings_json": "sample"
+    },
+    "stderr": null
+  },
   "audit_course_completion": {
     "argv": [
       "plugin",

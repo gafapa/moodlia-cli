@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3 - 2026-11-14
+
+- Synchronize the plugin `0.1.223` contract (255 operations) and generated
+  TypeScript types for `backup-course-module`, `backup-course-section`, and
+  `restore-course-item-backup`, requiring plugin build `2026111300` or later.
+- Document single activity and section backup and import, and test their
+  REST parameters and local validation of `--target-section-number`.
+
 ## 0.5.2 - 2026-10-28
 
 - Synchronize the plugin contract and generated TypeScript types for `list-users`
