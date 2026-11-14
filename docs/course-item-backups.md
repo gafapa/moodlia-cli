@@ -11,7 +11,9 @@ the three operations as direct commands:
 | `moodlia plugin restore-course-item-backup` | Imports an activity or section backup into an existing course without deleting anything. |
 
 These commands need plugin build `2026111300` (release `0.1.223`) or later. With
-an older plugin, Moodle answers that the function does not exist. Whole-course
+an older plugin, Moodle answers that the function does not exist. Use release
+`0.1.224` or later: in 0.1.223, a backup without `--filename` was stored as
+`backup.mbz` and replaced the previous unnamed backup in the same area. Whole-course
 backups keep using `backup-course` and `restore-course-backup`;
 `restore-course-item-backup` rejects them.
 

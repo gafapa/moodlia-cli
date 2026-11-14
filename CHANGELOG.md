@@ -7,6 +7,8 @@
   `restore-course-item-backup`, requiring plugin build `2026111300` or later.
 - Document single activity and section backup and import, and test their
   REST parameters and local validation of `--target-section-number`.
+- Recommend plugin `0.1.224` or later, which stops unnamed backups replacing
+  one another.
 
 ## 0.5.2 - 2026-10-28
 
