@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.3 - Unreleased
+## 0.5.3 - 2026-11-14
 
 - Synchronize the plugin `0.1.223` contract (255 operations) and generated
   TypeScript types for `backup-course-module`, `backup-course-section`, and
