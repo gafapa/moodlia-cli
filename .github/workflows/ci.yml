@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -18,6 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -25,6 +29,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            browser/package-lock.json
       - run: npm ci
       - run: npm ci --prefix browser
       - run: node browser/node_modules/playwright/cli.js install --with-deps chromium
@@ -41,11 +49,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         node: ['22.13.0', '24']
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
       - run: npm ci
       - run: npm run check
       - run: npm run test:coverage
@@ -58,6 +68,7 @@ jobs:
   # (or that branch until the tag is published).
   siblings:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,6 +103,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            moodle-core-cli/package-lock.json
+            moodlia-cli/package-lock.json
       - name: Install Core from source
         working-directory: moodle-core-cli
         run: npm ci
