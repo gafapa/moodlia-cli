@@ -178,18 +178,17 @@ moodlia create-question --category-id 12 --context-id 34 --question-type multich
 
 ### Capabilities
 
-The package currently exposes 247 CLI commands generated from the shared operation contract:
+The package exposes one CLI command for each of the 255 operations in the shared contract (plugin 0.1.223 and later), covering:
 
-- Course and category management: 22 commands.
-- Calendar, enrolments, groups, and completion: 27 commands.
-- Sections, modules, resources, and files: 15 commands.
-- Assignments, forums, glossaries, wikis, and books: 58 commands.
-- Choice, Database, Feedback, Lesson, and Workshop: 49 commands.
-- Question banks and quiz workflows: 34 commands.
-- Moodle plugin inventory and state: 5 commands.
-- Other utility operations: 34 commands.
+- course and category management, blueprints, audits, backups and restores;
+- calendar, users, enrolments, groups and completion;
+- sections, modules, resources and files;
+- assignments, forums, glossaries, wikis and books;
+- Choice, Database, Feedback, Lesson and Workshop;
+- question banks and quiz workflows;
+- Moodle plugin inventory and state.
 
-The three additional synchronization support reads expose contextual capability evidence, portable Workshop grading forms, and their associated authoring metadata. Use the generated help as the authoritative count and schema.
+Three synchronization support reads expose contextual capability evidence, portable Workshop grading forms, and their associated authoring metadata. Use the generated help as the authoritative count and schema.
 
 Run `moodlia --help` for the exact command list. The bundled `contract/operations.json` file contains parameter schemas, return schemas, command names, and enum values.
 
