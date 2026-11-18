@@ -57,7 +57,7 @@ loading the optional component.
 `node tests/webmcp-browser.mjs` from the CLI repository installs the component
 under ignored `node_modules/.browser-validation` and tests a visible Chromium
 instance against a loopback fixture with fictional data. On Linux, run it under
-`xvfb-run -a`. It invokes all 250 CLI operations with contract-shaped results,
+`xvfb-run -a`. It invokes every CLI operation in the contract with contract-shaped results,
 checks session reuse across CLI processes, JSON argument types, same-tab
 navigation, file bytes and draft propagation, download SHA-256/no-overwrite,
 write non-retry, IPC authentication, and close/reopen.
